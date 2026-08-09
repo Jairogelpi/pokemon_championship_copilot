@@ -13,7 +13,7 @@ from uuid import uuid4
 
 
 class ShowdownUnavailable(RuntimeError):
-    """Raised when the official damage calculator cannot answer safely."""
+    """Raised when the pinned Showdown-compatible calculator cannot answer safely."""
 
 
 class ShowdownCalculationError(ValueError):
@@ -83,6 +83,40 @@ class ShowdownCalculator:
             raise ShowdownUnavailable("calculator returned a malformed batch response")
         return values
 
+    def lookup(
+        self, kind: str, name: str, *, generation: int = 9
+    ) -> dict[str, Any]:
+        return self._request(
+            "lookup", {"kind": kind, "name": name, "generation": generation}
+        )
+
+    def learnset(
+        self,
+        species: str,
+        *,
+        generation: int = 9,
+        restriction: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"species": species, "generation": generation}
+        if restriction:
+            params["restriction"] = restriction
+        return self._request("learnset", params)
+
+    def type_matchup(
+        self, attack_type: str, defender: str, *, generation: int = 9
+    ) -> dict[str, Any]:
+        return self._request(
+            "type_matchup",
+            {
+                "attackType": attack_type,
+                "defender": defender,
+                "generation": generation,
+            },
+        )
+
+    def catalog(self) -> dict[str, Any]:
+        return self._request("catalog", {})
+
     def _start(self) -> None:
         if self._process is not None and self._process.poll() is None:
             return
@@ -90,9 +124,15 @@ class ShowdownCalculator:
             raise ShowdownUnavailable("Node.js was not found; install Node 20 or newer")
         if not self.worker_path.is_file():
             raise ShowdownUnavailable(f"calculator worker is missing: {self.worker_path}")
-        package_path = self.repo_root / "node_modules" / "@smogon" / "calc"
-        if not package_path.is_dir():
-            raise ShowdownUnavailable("@smogon/calc is not installed; run npm ci")
+        required_packages = (
+            self.repo_root / "node_modules" / "@smogon" / "calc",
+            self.repo_root / "node_modules" / "@pkmn" / "data",
+            self.repo_root / "node_modules" / "@pkmn" / "dex",
+        )
+        if not all(package.is_dir() for package in required_packages):
+            raise ShowdownUnavailable(
+                "@smogon/calc, @pkmn/data, and @pkmn/dex are required; run npm ci"
+            )
 
         self._responses = queue.Queue()
         self._stderr.clear()

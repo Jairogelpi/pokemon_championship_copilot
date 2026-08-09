@@ -225,6 +225,14 @@ textarea { padding: 12px; resize: vertical; line-height: 1.45; }
 .threat-line { display: grid; grid-template-columns: 1fr auto auto; gap: 9px; background: rgb(241 121 120 / 5%); padding: 7px 9px; font-size: 8px; }
 .threat-line b { color: #f1b0af; }
 .threat-line em { color: var(--red); font-style: normal; }
+.counter-grid { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 9px; }
+.counter-grid summary { color: var(--accent); cursor: pointer; font-size: 8px; font-weight: 850; text-transform: uppercase; letter-spacing: .09em; }
+.counter-line { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 9px; align-items: center; padding: 8px 9px; margin-top: 5px; background: rgb(244 197 66 / 4%); font-size: 8px; }
+.counter-line div strong, .counter-line div span { display: block; }
+.counter-line div strong { color: #d7dde5; line-height: 1.35; }
+.counter-line div span { color: var(--muted); margin-top: 2px; }
+.counter-line b { color: #f1b0af; white-space: nowrap; }
+.counter-line em { color: var(--red); font-style: normal; white-space: nowrap; }
 .calc-note, .calc-warning { color: var(--muted) !important; font-size: 9px !important; line-height: 1.4 !important; }
 .calc-note { margin: 10px 0 0 !important; }
 .calc-warning { padding: 9px; border-left: 2px solid var(--red); background: rgb(241 121 120 / 6%); }
@@ -243,6 +251,8 @@ textarea { padding: 12px; resize: vertical; line-height: 1.45; }
 .belief-name span { color: var(--accent); }
 .belief-bars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; }
 .belief-bars div { background: #0a0f16; padding: 5px; color: var(--muted); font-size: 8px; text-align: center; }
+.move-priors { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.move-priors span { border: 1px solid var(--line); padding: 3px 5px; color: #aeb8c5; font-size: 7px; }
 
 .operations-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 16px; margin-top: 16px; }
 .event-panel, .interpreter-panel, .log-panel { padding: 22px; min-height: 285px; }

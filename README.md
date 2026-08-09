@@ -1,7 +1,7 @@
 # Pokémon Champions Battle Copilot
 
 An unofficial, stateful battle assistant for Pokémon Champions doubles. Release
-0.2 connects every live recommendation to the official
+0.3 connects every live recommendation to the pinned upstream
 [`@smogon/calc`](https://github.com/smogon/damage-calc) engine used by the
 Pokémon Showdown damage calculator.
 
@@ -12,7 +12,9 @@ mechanics, legality, damage, or speed.
 ## North-star goal
 
 Build a decision system whose play quality can be demonstrated at the level of
-a 2,000-point Master player for its supported team and regulation.
+a 2,000-point Master player for its supported team and regulation. Release 0.3
+is an adversarial one-turn search model; it is not yet evidence that this goal
+has been reached.
 
 This is not a promise to predict every move. Pokémon contains hidden
 information, simultaneous choices, novel sets, and randomness. The system must
@@ -121,7 +123,7 @@ make run
 OpenAI is an interpretation boundary only. A proposal always requires explicit
 confirmation in the UI before the deterministic engine applies it.
 
-## Implemented in Showdown scenario model 0.2
+## Implemented in adversarial search model 0.3
 
 - Complete in-memory match lifecycle and six-versus-six team preview.
 - Bring-four and lead baseline for `GMKXPHAS7D`.
@@ -130,10 +132,10 @@ confirmation in the UI before the deterministic engine applies it.
   confirmed-fact events.
 - Opponent belief distributions that retain an `other` bucket.
 - Legal paired-action generation, switches, targets, and duplicate-slot checks.
-- Persistent Node worker around the official Smogon/Pokémon Showdown damage
+- Persistent Node worker around the Smogon/Pokémon Showdown damage
   library, with request IDs, timeouts, crash detection, health reporting, and
   batch isolation.
-- Complete official roll distributions for every live player move/target pair,
+- Complete upstream roll distributions for every live player move/target pair,
   including Doubles spread reduction, current HP, status, boosts, items,
   abilities, weather, terrain, screens, Protect, and base move accuracy when
   represented by the compatibility profile.
@@ -151,6 +153,27 @@ confirmation in the UI before the deterministic engine applies it.
   lower-tail value, strategic value, information value, and catastrophic-loss
   probability.
 - Effective-speed primitive for independently testable speed checks.
+- Queryable Gen 9 knowledge service backed by pinned `@pkmn/data` and
+  `@pkmn/dex`: 876 species/forms, 685 moves, 249 items, 310 abilities, 25
+  natures, 19 types, legal generation-compatible learnsets, and type matchups.
+- Dated Regulation M-B S3 strategy snapshot covering the ordered moves, items,
+  abilities, rank, and win rate for 25 meta Pokémon. Order is converted into a
+  labelled heuristic prior and is never presented as observed action frequency.
+- Daily GitHub Actions meta refresh at 05:17 UTC. It fetches the current M-B S3
+  ranked pages, extracts source-reported move/item/ability usage and win rates,
+  rejects partial or malformed results, runs every regression, and commits only
+  a material data change. Git history preserves previous snapshots.
+- Concrete opponent-action generation for both active slots: candidate moves,
+  all live single targets, spread targets, Protect, legal bench switches, and
+  a residual hidden-response branch.
+- Exhaustive Cartesian enumeration of the bounded response model (206 legal
+  joint replies in the default Charizard + Garchomp fixture), with explicit
+  coverage mass and no discarded probability.
+- One-turn simultaneous adversarial search that evaluates every player paired
+  action against every modelled joint reply. Priority, scenario speed, Trick
+  Room, faster KO, and Fake Out suppression affect the incoming-risk estimate.
+- Inspectable principal counter-lines showing probability, outgoing and
+  incoming damage, KO risk, utility, and speed-order evidence.
 - Battle console with preview, live state, recommendations, alternatives,
   belief state, fast input, interpretation proposals, log, undo, and export.
 - Real HTTP integration tests and GitHub Actions CI.
@@ -171,7 +194,7 @@ See:
 
 ## Status
 
-Showdown scenario model 0.2 is runnable and tested. Its damage values are exact
+Adversarial search model 0.3 is runnable and tested. Its damage values are exact
 under each displayed Showdown Gen 9 scenario. Pokémon Champions is not a
 one-to-one copy of Gen 9: Champions-only Mega stats, custom items, regulation
 legality, and any divergent mechanics still need an authoritative dataset.
@@ -184,7 +207,7 @@ protocol.
 ## Calculator API
 
 `POST /api/calculate/showdown` accepts the same conceptual inputs as the
-official package:
+upstream package:
 
 ```json
 {
@@ -197,10 +220,34 @@ official package:
 ```
 
 The response includes all weighted rolls, absolute and percentage ranges,
-conditional KO chance, KO chance including base accuracy, and the official
+conditional KO chance, KO chance including base accuracy, and the upstream
 Showdown description. `POST /api/calculate/showdown/batch` accepts a `requests`
 array. A bad matchup is isolated inside the batch instead of discarding the
 valid calculations.
+
+The mechanics knowledge endpoints are:
+
+```text
+POST /api/knowledge/lookup        species, move, item, ability, nature, or type
+POST /api/knowledge/learnset      generation-compatible legal move pool
+POST /api/knowledge/type-matchup  attacking type against a defending species
+POST /api/meta/species            dated Regulation M-B S3 strategy entry
+```
+
+“100% response coverage” means every joint response generated from the current
+revealed moves, six ranked meta candidates per active Pokémon, legal targets,
+Protect, switches, and residual-other actions. It does not mean every hidden
+four-move set or every future Champions-specific mechanic is known.
+
+The scheduled updater can also be run manually from the Actions tab or locally:
+
+```bash
+python scripts/update_meta.py
+```
+
+The updater is fail-closed: an HTTP error, format change, fewer than 20 complete
+entries, missing moves/items/abilities, duplicate ranks, or an invalid win rate
+causes the job to fail without replacing the last valid snapshot.
 
 ## Disclaimer
 

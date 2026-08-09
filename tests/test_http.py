@@ -105,6 +105,21 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(16, sum(roll["weight"] for roll in result["rolls"]))
         self.assertLessEqual(result["minimumPercent"], result["maximumPercent"])
 
+    def test_knowledge_and_meta_endpoints(self) -> None:
+        status, move = self.post(
+            "/api/knowledge/lookup", {"kind": "move", "name": "Fake Out"}
+        )
+        self.assertEqual(200, status)
+        self.assertEqual(3, move["entry"]["priority"])
+        status, learnset = self.post(
+            "/api/knowledge/learnset", {"species": "Garchomp"}
+        )
+        self.assertEqual(200, status)
+        self.assertGreater(learnset["moveCount"], 60)
+        status, meta = self.post("/api/meta/species", {"species": "Charizard"})
+        self.assertEqual(200, status)
+        self.assertTrue(meta["found"])
+
 
 if __name__ == "__main__":
     unittest.main()

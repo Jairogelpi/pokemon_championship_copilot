@@ -49,9 +49,10 @@ function buildPreviewInputs() {
 
 function renderHealth() {
   const healthy = state.health?.showdown?.available === true;
+  const catalog = state.health?.showdown?.knowledge?.catalog;
   $("#health-dot").classList.toggle("ok", healthy);
   $("#health-label").textContent = healthy
-    ? `Showdown ${state.health.showdown.version} online`
+    ? `Showdown ${state.health.showdown.version} · ${catalog?.species || "?"} Pokémon · ${catalog?.moves || "?"} moves`
     : "Showdown calculator unavailable";
   if (state.health?.openai_configured) {
     $("#interpreter-source")?.replaceChildren(document.createTextNode("OPENAI + FALLBACK"));
@@ -158,8 +159,18 @@ function renderRecommendation() {
     .map((estimate) => {
       const actor = battle.opponent.roster[estimate.actor]?.name || estimate.actor;
       const target = battle.player.roster[estimate.target]?.name || estimate.target;
-      return `<div class="threat-line"><span>${escapeHtml(actor)} · ${escapeHtml(estimate.move)} → ${escapeHtml(target)}</span><b>${estimate.minimum_percent.toFixed(1)}–${estimate.maximum_percent.toFixed(1)}%</b><em>${(estimate.knockout_probability_weighted * 100).toFixed(0)}% KO</em></div>`;
+      return `<div class="threat-line"><span>${escapeHtml(actor)} · ${escapeHtml(estimate.move)} → ${escapeHtml(target)} · priority ${estimate.move_priority} · Spe ${estimate.attacker_speed}</span><b>${estimate.minimum_percent.toFixed(1)}–${estimate.maximum_percent.toFixed(1)}%</b><em>${(estimate.knockout_probability_weighted * 100).toFixed(0)}% KO</em></div>`;
     })
+    .join("");
+  const counterRows = (primary.principal_lines || [])
+    .map(
+      (line) => `
+        <div class="counter-line">
+          <div><strong>${escapeHtml(line.response)}</strong><span>${(line.probability * 100).toFixed(1)}% model prior · utility ${line.utility.toFixed(1)}</span></div>
+          <b>in ${line.incoming_damage_percent.toFixed(1)}%</b>
+          <em>${(line.incoming_knockout_probability * 100).toFixed(0)}% incoming KO</em>
+        </div>`,
+    )
     .join("");
   $("#primary-recommendation").innerHTML = `
     <h2>${escapeHtml(primary.label)}</h2>
@@ -171,8 +182,9 @@ function renderRecommendation() {
       <div><span>Risk</span><strong>${escapeHtml(recommendation.risk).toUpperCase()}</strong></div>
     </div>
     <div class="damage-grid">${damageRows || '<div class="calc-warning">This line has no direct-damage calculation.</div>'}</div>
-    ${threatRows ? `<div class="threat-grid"><span>Worst replies from revealed moves</span>${threatRows}</div>` : ""}
-    <p class="calc-note">${escapeHtml(recommendation.calculator.compatibility || recommendation.calculator.message || "Official @smogon/calc")} · ${recommendation.response_model.scenarios_evaluated} simultaneous rival-response scenarios · worst 20% tail evaluated.</p>`;
+    ${threatRows ? `<div class="threat-grid"><span>Worst damage replies from revealed + meta candidates</span>${threatRows}</div>` : ""}
+    ${counterRows ? `<details class="counter-grid" open><summary>Worst concrete counter-lines</summary>${counterRows}</details>` : ""}
+    <p class="calc-note">${escapeHtml(recommendation.calculator.compatibility || recommendation.calculator.message || "@smogon/calc")} · ${recommendation.response_model.scenarios_evaluated} simultaneous rival responses · ${(recommendation.response_model.coverage_mass * 100).toFixed(1)}% of the bounded model enumerated · worst 20% tail evaluated.</p>`;
   $("#alternatives").innerHTML = recommendation.alternatives
     .map(
       (alternative, index) => `
@@ -194,10 +206,20 @@ function topCategories(distribution) {
 function renderBeliefs() {
   const battle = state.match.state;
   const beliefs = state.match.beliefs.opponent;
+  const candidateActions = state.match.recommendation?.response_model?.candidate_actions || {};
   $("#beliefs").innerHTML = battle.opponent.active
     .map((id) => {
       const belief = beliefs[id];
       const member = battle.opponent.roster[id];
+      const moveMass = (candidateActions[id] || [])
+        .filter((action) => action.kind === "move")
+        .reduce((totals, action) => {
+          totals[action.move] = (totals[action.move] || 0) + action.probability;
+          return totals;
+        }, {});
+      const concrete = Object.entries(moveMass)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
       return `
         <div class="belief-item">
           <div class="belief-name"><strong>${escapeHtml(member.name)}</strong><span>Mega ${(belief.mega_probability * 100).toFixed(0)}%</span></div>
@@ -205,6 +227,11 @@ function renderBeliefs() {
             ${topCategories(belief.action_categories)
               .map(([name, probability]) => `<div>${escapeHtml(name)} ${(probability * 100).toFixed(0)}%</div>`)
               .join("")}
+          </div>
+          <div class="move-priors">
+            ${concrete
+              .map(([move, probability]) => `<span>${escapeHtml(move)} ${(probability * 100).toFixed(0)}%</span>`)
+              .join("") || "<span>No ranked move prior</span>"}
           </div>
         </div>`;
     })

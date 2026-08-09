@@ -44,9 +44,9 @@ BULK_SCENARIOS = (
     BulkScenario("max_special_defense", 0.25, {"hp": 252, "spd": 252}, "Calm"),
 )
 OFFENSE_SCENARIOS = (
-    BulkScenario("no_offense_investment", 0.35, {}),
-    BulkScenario("max_attack", 0.65, {"atk": 252}, "Adamant"),
-    BulkScenario("max_special_attack", 0.65, {"spa": 252}, "Modest"),
+    BulkScenario("fast_neutral", 0.35, {"spe": 252}),
+    BulkScenario("max_attack", 0.65, {"atk": 252, "spe": 252}, "Adamant"),
+    BulkScenario("max_special_attack", 0.65, {"spa": 252, "spe": 252}, "Modest"),
 )
 
 
@@ -214,6 +214,12 @@ def _estimate_from_rows(
         source=str(first["source"]),
         source_version=str(first["sourceVersion"]),
         generation=int(first["generation"]),
+        move_category=str(first["moveCategory"]),
+        move_type=str(first["moveType"]),
+        move_priority=int(first.get("movePriority", 0)),
+        move_target=str(first.get("moveTarget", "normal")),
+        attacker_speed=int(first.get("attackerSpeed", 0)),
+        defender_speed=int(first.get("defenderSpeed", 0)),
         spread_move=bool(first["spreadMove"]),
         minimum_percent=round(
             min(float(result["minimumPercent"]) for _, result in relevant), 3
@@ -250,6 +256,7 @@ def _estimate_from_rows(
 def calculate_turn_damage(
     calculator: ShowdownCalculator,
     state: BattleState,
+    opponent_moves: dict[str, list[str]] | None = None,
 ) -> tuple[
     dict[tuple[str, str, str], DamageEstimate],
     dict[tuple[str, str, str], DamageEstimate],
@@ -313,7 +320,9 @@ def calculate_turn_damage(
     for key, rows in grouped.items():
         estimates[key] = _estimate_from_rows(key, rows, offense=False)
 
-    threats, threat_errors = calculate_revealed_threats(calculator, state)
+    threats, threat_errors = calculate_revealed_threats(
+        calculator, state, opponent_moves=opponent_moves
+    )
     errors.extend(threat_errors)
 
     requested_groups = len({(actor, move, target) for actor, move, target, _ in metadata})
@@ -329,6 +338,9 @@ def calculate_turn_damage(
         "coverage": round(len(estimates) / requested_groups, 4) if requested_groups else 1.0,
         "errors": errors[:8],
         "revealed_threat_matchups": len(threats),
+        "modelled_opponent_moves": sum(
+            len(moves) for moves in (opponent_moves or {}).values()
+        ),
         "compatibility": "Showdown Gen 9 proxy; Champions-only mechanics are flagged as assumptions",
     }
     if requests and not estimates:
@@ -341,6 +353,8 @@ def calculate_turn_damage(
 def calculate_revealed_threats(
     calculator: ShowdownCalculator,
     state: BattleState,
+    *,
+    opponent_moves: dict[str, list[str]] | None = None,
 ) -> tuple[dict[tuple[str, str, str], DamageEstimate], list[dict[str, str]]]:
     requests: list[dict[str, Any]] = []
     metadata: list[tuple[str, str, str, BulkScenario]] = []
@@ -351,7 +365,11 @@ def calculate_revealed_threats(
     ]
     for actor_id in state.opponent.active:
         actor = state.opponent.roster[actor_id]
-        for move in actor.revealed_moves:
+        moves = list(actor.revealed_moves)
+        for candidate in (opponent_moves or {}).get(actor_id, []):
+            if candidate not in moves:
+                moves.append(candidate)
+        for move in moves:
             if move in NON_DAMAGE_MOVES:
                 continue
             facts = _known(state.opponent, actor_id)

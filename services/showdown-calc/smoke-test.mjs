@@ -24,4 +24,6 @@ assert.equal(message.result.source, "@smogon/calc");
 assert.equal(message.result.move, "Earthquake");
 assert.ok(message.result.maximumDamage >= message.result.minimumDamage);
 assert.ok(message.result.koProbabilityOnHit >= 0 && message.result.koProbabilityOnHit <= 1);
+assert.equal(message.result.movePriority, 0);
+assert.ok(message.result.attackerSpeed > 0);
 child.kill();

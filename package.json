@@ -1,8 +1,8 @@
 {
   "name": "pokemon-champions-copilot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Stateful Pokémon Champions doubles copilot with the official Smogon damage calculator",
+  "description": "Stateful Pokémon Champions doubles copilot with Showdown mechanics data and adversarial search",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -12,6 +12,8 @@
     "test:worker": "node services/showdown-calc/smoke-test.mjs"
   },
   "dependencies": {
+    "@pkmn/data": "0.10.11",
+    "@pkmn/dex": "0.10.11",
     "@smogon/calc": "0.11.0"
   }
 }

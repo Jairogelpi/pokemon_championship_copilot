@@ -9,6 +9,8 @@ from champions_copilot.mechanics import calculate_damage_range, effective_speed
 from champions_copilot.team import PLAYER_TEAM, create_match
 
 from .openai_adapter import OpenAIEventInterpreter
+from .meta import MetaRepository
+from .opponent import build_response_model
 from .parser import interpret_locally
 from .showdown import ShowdownCalculationError, ShowdownCalculator, ShowdownUnavailable
 from .showdown_planner import calculate_turn_damage
@@ -24,6 +26,7 @@ class AppService:
         self.store = store or InMemoryStore()
         self.openai = OpenAIEventInterpreter()
         self.calculator = calculator or ShowdownCalculator()
+        self.meta = MetaRepository(self.calculator.repo_root)
 
     def close(self) -> None:
         self.calculator.close()
@@ -32,10 +35,11 @@ class AppService:
         calculator = self.calculator.health()
         return {
             "status": "ok" if calculator.get("available") else "degraded",
-            "policy_version": "showdown-risk-0.2",
-            "validation_status": "SHOWDOWN_SCENARIO_MODEL",
+            "policy_version": "adversarial-search-0.3",
+            "validation_status": "ADVERSARIAL_SHOWDOWN_MODEL",
             "openai_configured": self.openai.configured,
             "showdown": calculator,
+            "meta": self.meta.status(),
         }
 
     def team(self) -> dict[str, Any]:
@@ -204,6 +208,35 @@ class AppService:
             raise ValueError("requests must be an array")
         return {"results": self.calculator.batch(requests)}
 
+    def knowledge_lookup(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.calculator.lookup(
+            str(payload.get("kind", "")),
+            str(payload.get("name", "")),
+            generation=int(payload.get("generation", 9)),
+        )
+
+    def knowledge_learnset(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.calculator.learnset(
+            str(payload.get("species", "")),
+            generation=int(payload.get("generation", 9)),
+            restriction=(
+                str(payload["restriction"]) if payload.get("restriction") else None
+            ),
+        )
+
+    def knowledge_type_matchup(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.calculator.type_matchup(
+            str(payload.get("attack_type", "")),
+            str(payload.get("defender", "")),
+            generation=int(payload.get("generation", 9)),
+        )
+
+    def meta_lookup(self, payload: dict[str, Any]) -> dict[str, Any]:
+        species = str(payload.get("species", "")).strip()
+        if not species:
+            raise ValueError("species is required")
+        return self.meta.get(species)
+
     def speed(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "effective_speed": effective_speed(
@@ -222,12 +255,23 @@ class AppService:
         ):
             return record.cached_recommendation
         try:
-            damage_estimates, incoming_threats, calculator_status = calculate_turn_damage(
-                self.calculator, record.state
+            response_model = build_response_model(
+                self.calculator, self.meta, record.state, record.beliefs
             )
+            damage_estimates, incoming_threats, calculator_status = calculate_turn_damage(
+                self.calculator,
+                record.state,
+                opponent_moves=response_model["damage_moves"],
+            )
+            calculator_status["knowledge"] = self.calculator.health().get("knowledge")
+            calculator_status["meta"] = self.meta.status()
+            calculator_status["opponent_response_coverage"] = response_model[
+                "coverage_mass"
+            ]
         except (ShowdownUnavailable, ShowdownCalculationError) as exc:
             damage_estimates = {}
             incoming_threats = {}
+            response_model = {}
             calculator_status = {
                 "available": False,
                 "status": "unavailable",
@@ -240,6 +284,7 @@ class AppService:
             damage_estimates=damage_estimates,
             incoming_threats=incoming_threats,
             calculator_status=calculator_status,
+            concrete_response_model=response_model,
         ).to_dict()
         record.recommendation_revision = record.state.revision
         record.cached_recommendation = result
