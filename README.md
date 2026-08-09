@@ -6,15 +6,29 @@ The project is built around one core rule: language models may interpret and
 explain a battle, but they are not the source of truth for battle state,
 mechanics, legality, damage, or speed.
 
-## Product goal
+## North-star goal
 
-Build a copilot that can:
+Build a decision system whose play quality can be demonstrated at the level of
+a 2,000-point Master player for its supported team and regulation.
+
+This is not a promise to predict every move. Pokémon contains hidden
+information, simultaneous choices, novel sets, and randomness. The system must
+instead maintain calibrated beliefs about the opponent, search multiple turns,
+and select actions that remain strong across plausible responses—including
+when its most likely prediction is wrong.
+
+The copilot must:
 
 - recommend the four Pokémon and lead from team preview;
 - preserve the complete state of a match without conversational memory drift;
 - calculate damage, speed, priority, and field interactions deterministically;
 - track revealed opponent moves, items, abilities, and possible Mega Evolution;
-- generate legal candidate actions and rank them by risk and expected value;
+- infer opponent sets, leads, targets, switches, Protect usage, and Mega choice
+  as probability distributions rather than unsupported facts;
+- generate legal joint actions and opponent response sets;
+- search tactical lines and rank actions by expected value, worst-case safety,
+  information value, and preservation of the match win condition;
+- adapt its priors from versioned meta snapshots and the user's match history;
 - explain recommendations in concise competitive language;
 - replay a battle from its event log for review and debugging.
 
@@ -49,6 +63,14 @@ The AI layer is limited to:
 
 Every AI-proposed event must be validated before it can mutate battle state.
 
+The Master Decision Engine is divided into five independently testable layers:
+
+1. Exact mechanics and legal action generation.
+2. Belief state over hidden opponent information.
+3. Tactical search over simultaneous actions and uncertain responses.
+4. Strategic evaluation of board control, resources, and win conditions.
+5. Explanation and learning from completed matches.
+
 ## Initial milestone
 
 The first milestone is a complete manually operated match:
@@ -60,12 +82,18 @@ The first milestone is a complete manually operated match:
 5. Receive a primary action, alternatives, risk, and explanation.
 6. Export and replay the battle log without state divergence.
 
-See [V1 scope](docs/v1-scope.md) and
-[ADR-0001](docs/adr/0001-deterministic-core.md).
+See:
+
+- [V1 scope](docs/v1-scope.md)
+- [Master Decision Engine specification](docs/master-decision-engine.md)
+- [Evaluation protocol](docs/evaluation-protocol.md)
+- [Roadmap and quality gates](docs/roadmap.md)
+- [ADR-0001: deterministic core](docs/adr/0001-deterministic-core.md)
+- [ADR-0002: belief-state planning](docs/adr/0002-belief-state-planning.md)
 
 ## Status
 
-Repository initialized. Implementation has not started.
+Product scope and validation contract defined. Implementation has not started.
 
 ## Disclaimer
 
