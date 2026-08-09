@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Stateful, risk-aware battle copilot for Pokémon Champions doubles"
+    />
+    <title>Champions Battle Copilot</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Champions Battle Copilot home">
+        <span class="brand-mark">C</span>
+        <span>
+          <strong>Champions</strong>
+          <small>Battle Copilot</small>
+        </span>
+      </a>
+      <div class="system-status">
+        <span id="health-dot" class="status-dot"></span>
+        <span id="health-label">Connecting</span>
+        <span class="status-divider"></span>
+        <span class="policy-label">BASELINE 0.1 · UNVALIDATED</span>
+      </div>
+    </header>
+
+    <main>
+      <section id="setup-view" class="setup-view">
+        <div class="setup-copy">
+          <p class="eyebrow">MASTER DECISION ENGINE</p>
+          <h1>Think in lines.<br /><span>Not guesses.</span></h1>
+          <p class="intro">
+            Exact match state, explicit opponent beliefs, legal paired actions,
+            and risk-aware recommendations for the washy M-4 replica team.
+          </p>
+          <div class="principles">
+            <div><b>01</b><span>State never depends on chat memory.</span></div>
+            <div><b>02</b><span>Unknown facts stay probabilistic.</span></div>
+            <div><b>03</b><span>Every recommendation is inspectable.</span></div>
+          </div>
+        </div>
+
+        <div class="setup-panel panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">TEAM PREVIEW</p>
+              <h2>Enter the opponent's six</h2>
+            </div>
+            <span class="step-badge">01 / SETUP</span>
+          </div>
+          <form id="preview-form">
+            <div id="opponent-inputs" class="opponent-inputs"></div>
+            <button class="button button-primary button-full" type="submit">
+              Build battle plan <span>→</span>
+            </button>
+          </form>
+          <div class="team-source">
+            <span>Player team</span>
+            <strong id="team-name">Loading GMKXPHAS7D…</strong>
+          </div>
+          <div id="team-warning" class="inline-warning hidden"></div>
+        </div>
+      </section>
+
+      <section id="battle-view" class="battle-view hidden">
+        <div class="battle-head">
+          <div>
+            <p class="eyebrow">LIVE DECISION CONSOLE</p>
+            <h1>Turn <span id="turn-number">1</span></h1>
+          </div>
+          <div class="battle-actions">
+            <button id="export-button" class="button button-secondary" type="button">Export log</button>
+            <button id="new-match-button" class="button button-ghost" type="button">New match</button>
+          </div>
+        </div>
+
+        <div class="field-strip" aria-label="Field conditions">
+          <div><span>Weather</span><strong id="field-weather">—</strong></div>
+          <div><span>Terrain</span><strong id="field-terrain">—</strong></div>
+          <div><span>Trick Room</span><strong id="field-trick-room">0</strong></div>
+          <div><span>Your Tailwind</span><strong id="field-tailwind">0</strong></div>
+          <div><span>Revision</span><strong id="state-revision">0</strong></div>
+        </div>
+
+        <div class="battle-grid">
+          <section class="panel field-panel">
+            <div class="panel-heading compact">
+              <div><p class="eyebrow">YOUR FIELD</p><h2>Active board</h2></div>
+              <span id="player-alive" class="count-label">4 alive</span>
+            </div>
+            <div id="player-active" class="card-stack"></div>
+            <div class="section-rule"><span>Bench</span></div>
+            <div id="player-bench" class="bench-grid"></div>
+          </section>
+
+          <section class="recommendation-column">
+            <article id="primary-recommendation" class="recommendation-card"></article>
+            <div class="alternatives-head">
+              <span>Alternative lines</span>
+              <small>risk-adjusted</small>
+            </div>
+            <div id="alternatives" class="alternatives"></div>
+          </section>
+
+          <section class="panel field-panel opponent-panel">
+            <div class="panel-heading compact">
+              <div><p class="eyebrow">OPPONENT</p><h2>Observed board</h2></div>
+              <span id="opponent-alive" class="count-label">6 possible</span>
+            </div>
+            <div id="opponent-active" class="card-stack"></div>
+            <div class="section-rule"><span>Belief state</span></div>
+            <div id="beliefs" class="belief-list"></div>
+          </section>
+        </div>
+
+        <div class="operations-grid">
+          <section class="panel event-panel">
+            <div class="panel-heading compact">
+              <div><p class="eyebrow">FAST INPUT</p><h2>Record an event</h2></div>
+              <button id="next-turn-button" class="button button-small" type="button">Next turn</button>
+            </div>
+            <form id="event-form" class="event-form">
+              <label>
+                Pokémon
+                <select id="event-actor"></select>
+              </label>
+              <label>
+                Event
+                <select id="event-type">
+                  <option value="hp_changed">Set HP %</option>
+                  <option value="move_used">Move used</option>
+                  <option value="status_set">Status</option>
+                  <option value="boost_changed">Stat stage</option>
+                  <option value="switch">Switch</option>
+                  <option value="faint">Fainted</option>
+                  <option value="mega_evolved">Mega Evolution</option>
+                </select>
+              </label>
+              <label id="event-value-label">
+                Value
+                <input id="event-value" required placeholder="62" />
+              </label>
+              <button class="button button-primary" type="submit">Apply event</button>
+            </form>
+            <p id="event-help" class="form-help">Enter the remaining HP percentage.</p>
+          </section>
+
+          <section class="panel interpreter-panel">
+            <div class="panel-heading compact">
+              <div><p class="eyebrow">TEXT / VOICE TRANSCRIPT</p><h2>Propose an event</h2></div>
+              <span id="interpreter-source" class="step-badge">LOCAL PARSER</span>
+            </div>
+            <form id="interpret-form">
+              <textarea
+                id="interpret-text"
+                rows="3"
+                placeholder="Toxapex usa Viento Hielo y Kingambit queda al 62%…"
+              ></textarea>
+              <button class="button button-secondary" type="submit">Interpret</button>
+            </form>
+            <div id="proposal" class="proposal hidden"></div>
+          </section>
+
+          <section class="panel log-panel">
+            <div class="panel-heading compact">
+              <div><p class="eyebrow">IMMUTABLE HISTORY</p><h2>Battle log</h2></div>
+              <div class="log-actions">
+                <button id="undo-event-button" class="button button-small button-ghost" type="button">Undo last</button>
+                <span id="event-count" class="count-label">0 events</span>
+              </div>
+            </div>
+            <ol id="battle-log" class="battle-log"></ol>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

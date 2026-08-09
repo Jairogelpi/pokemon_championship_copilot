@@ -1,0 +1,13 @@
+[project]
+name = "pokemon-champions-copilot"
+version = "0.1.0"
+description = "A deterministic, stateful battle copilot for Pokémon Champions doubles"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.ruff]
+line-length = 100
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"

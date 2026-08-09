@@ -1,4 +1,11 @@
 # Tests
 
-Cross-layer golden battles and fixtures live here. Package-local unit and
-property tests should remain beside their corresponding implementation.
+The current suite covers deterministic replay, event invariants, belief
+normalization, paired-action legality, recommendation structure, mechanics,
+service workflows, local interpretation, export, and the real HTTP boundary.
+
+Run all checks with:
+
+```bash
+make check
+```

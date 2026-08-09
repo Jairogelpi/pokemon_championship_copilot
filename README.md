@@ -38,9 +38,9 @@ The first supported player team is the washy Ranked Season M-4 replica team
 ## Repository shape
 
 ```text
-apps/web/                 Battle UI and team preview workflow
-services/api/             Application API and AI orchestration
-packages/battle-engine/   Deterministic state and decision engine
+apps/web/                 Dependency-free battle console
+services/api/             Standard-library HTTP API and optional AI orchestration
+packages/battle-engine/   Deterministic state, belief, mechanics, and decision engine
 data/                     Versioned Champions-specific datasets
 docs/                     Product scope and architecture decisions
 tests/                    Cross-layer scenarios and battle fixtures
@@ -82,18 +82,75 @@ The first milestone is a complete manually operated match:
 5. Receive a primary action, alternatives, risk, and explanation.
 6. Export and replay the battle log without state divergence.
 
+## Run it
+
+The current implementation has no required third-party dependencies. Python
+3.11 or newer is sufficient.
+
+```bash
+git clone https://github.com/Jairogelpi/pokemon_championship_copilot.git
+cd pokemon_championship_copilot
+make check
+make run
+```
+
+Open <http://127.0.0.1:8765>.
+
+Docker is also supported:
+
+```bash
+docker build -t champions-copilot .
+docker run --rm -p 8765:8765 champions-copilot
+```
+
+### Optional OpenAI interpretation
+
+The application works without an API key using its conservative local text
+parser. To enable structured event proposals through the Responses API:
+
+```bash
+export OPENAI_API_KEY="..."
+export OPENAI_MODEL="gpt-5.6"
+make run
+```
+
+OpenAI is an interpretation boundary only. A proposal always requires explicit
+confirmation in the UI before the deterministic engine applies it.
+
+## Implemented in baseline 0.1
+
+- Complete in-memory match lifecycle and six-versus-six team preview.
+- Bring-four and lead baseline for `GMKXPHAS7D`.
+- Immutable event history with append-only corrections and deterministic replay.
+- HP, status, boosts, switches, fainting, moves, field conditions, Mega, and
+  confirmed-fact events.
+- Opponent belief distributions that retain an `other` bucket.
+- Legal paired-action generation, switches, targets, and duplicate-slot checks.
+- Risk-aware baseline ranking with expected value, lower-tail value, strategic
+  value, information value, and catastrophic-loss probability.
+- Damage-range and effective-speed primitives.
+- Battle console with preview, live state, recommendations, alternatives,
+  belief state, fast input, interpretation proposals, log, undo, and export.
+- Real HTTP integration tests and GitHub Actions CI.
+
+This is a functional baseline, not a validated Master 2000 policy. See
+[Implementation status](docs/implementation-status.md) for the exact boundary.
+
 See:
 
 - [V1 scope](docs/v1-scope.md)
 - [Master Decision Engine specification](docs/master-decision-engine.md)
 - [Evaluation protocol](docs/evaluation-protocol.md)
 - [Roadmap and quality gates](docs/roadmap.md)
+- [Implementation status](docs/implementation-status.md)
 - [ADR-0001: deterministic core](docs/adr/0001-deterministic-core.md)
 - [ADR-0002: belief-state planning](docs/adr/0002-belief-state-planning.md)
 
 ## Status
 
-Product scope and validation contract defined. Implementation has not started.
+Baseline 0.1 is runnable and tested. `STATE_ENGINE_VERIFIED` and every
+competitive quality gate remain provisional until the larger frozen corpus and
+independent validation described in the evaluation protocol exist.
 
 ## Disclaimer
 
