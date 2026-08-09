@@ -1,8 +1,10 @@
 # Application API
 
-The API uses Python's standard library and serves both JSON endpoints and the
-static battle console. Canonical battle state lives in the deterministic engine;
-the HTTP layer does not maintain a second representation.
+The HTTP layer uses Python's standard library and serves both JSON endpoints and
+the static battle console. Canonical battle state lives in the deterministic
+engine; the HTTP layer does not maintain a second representation. Exact damage
+calls cross a persistent local worker running the pinned official
+`@smogon/calc` package.
 
 ## Endpoints
 
@@ -18,6 +20,8 @@ POST /api/matches/{id}/recommend
 POST /api/matches/{id}/interpret
 GET  /api/matches/{id}/export
 POST /api/calculate/damage
+POST /api/calculate/showdown
+POST /api/calculate/showdown/batch
 POST /api/calculate/speed
 ```
 

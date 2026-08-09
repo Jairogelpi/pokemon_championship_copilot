@@ -16,6 +16,8 @@ class MatchRecord:
     beliefs: BeliefState
     events: list[BattleEvent] = field(default_factory=list)
     preview: dict[str, Any] = field(default_factory=dict)
+    recommendation_revision: int = -1
+    cached_recommendation: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {

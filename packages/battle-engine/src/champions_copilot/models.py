@@ -6,10 +6,15 @@ from typing import Any
 
 STAT_NAMES = ("atk", "def", "spa", "spd", "spe", "accuracy", "evasion")
 VALID_STATUSES = {None, "burn", "poison", "toxic", "paralysis", "sleep", "freeze"}
+CORE_STATS = ("hp", "atk", "def", "spa", "spd", "spe")
 
 
 def default_boosts() -> dict[str, int]:
     return {name: 0 for name in STAT_NAMES}
+
+
+def default_ivs() -> dict[str, int]:
+    return {name: 31 for name in CORE_STATS}
 
 
 @dataclass(slots=True)
@@ -20,6 +25,10 @@ class PokemonState:
     item: str | None = None
     ability: str | None = None
     nature: str | None = None
+    level: int = 50
+    evs: dict[str, int] = field(default_factory=dict)
+    ivs: dict[str, int] = field(default_factory=default_ivs)
+    tera_type: str | None = None
     role: str = "unknown"
     set_verified: bool = False
     hp: int = 100
@@ -38,6 +47,14 @@ class PokemonState:
         for stat, stage in self.boosts.items():
             if stat not in STAT_NAMES or not -6 <= stage <= 6:
                 raise ValueError(f"invalid stat stage: {stat}={stage}")
+        if not 1 <= self.level <= 100:
+            raise ValueError("level must be between 1 and 100")
+        for table_name, values, maximum in (("evs", self.evs, 252), ("ivs", self.ivs, 31)):
+            for stat, value in values.items():
+                if stat not in CORE_STATS or not 0 <= int(value) <= maximum:
+                    raise ValueError(f"invalid {table_name} value: {stat}={value}")
+        if sum(int(value) for value in self.evs.values()) > 510:
+            raise ValueError("EV total cannot exceed 510")
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)

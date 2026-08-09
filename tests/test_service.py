@@ -21,10 +21,17 @@ class ServiceTests(unittest.TestCase):
         self.created = self.service.create_match({"opponent_team": OPPONENT})
         self.match_id = self.created["state"]["match_id"]
 
+    def tearDown(self) -> None:
+        self.service.close()
+
     def test_create_match_returns_preview_beliefs_and_recommendation(self) -> None:
         self.assertEqual(1, self.created["state"]["turn"])
         self.assertEqual(6, len(self.created["beliefs"]["opponent"]))
         self.assertIsNotNone(self.created["recommendation"])
+        calculator = self.created["recommendation"]["calculator"]
+        self.assertEqual("@smogon/calc", calculator["engine"])
+        self.assertEqual(1.0, calculator["coverage"])
+        self.assertTrue(self.created["recommendation"]["primary"]["damage"])
 
     def test_record_event_updates_state_and_export_replays(self) -> None:
         changed = self.service.record_event(
@@ -35,6 +42,26 @@ class ServiceTests(unittest.TestCase):
         exported = self.service.export_match(self.match_id)
         self.assertEqual(exported["final_state"], changed["state"])
         self.assertEqual(1, len(exported["events"]))
+
+    def test_revealed_opponent_attack_is_calculated_as_incoming_threat(self) -> None:
+        changed = self.service.record_event(
+            self.match_id,
+            {
+                "type": "move_used",
+                "payload": {
+                    "side": "opponent",
+                    "pokemon": "charizard",
+                    "move": "Heat Wave",
+                },
+            },
+        )
+        recommendation = changed["recommendation"]
+        self.assertGreater(recommendation["calculator"]["revealed_threat_matchups"], 0)
+        ranked = [recommendation["primary"], *recommendation["alternatives"]]
+        self.assertTrue(any(candidate["threats"] for candidate in ranked))
+        self.assertTrue(
+            any(candidate["score"]["incoming_damage_percent"] > 0 for candidate in ranked)
+        )
 
     def test_correction_is_append_only_and_rebuilds_state(self) -> None:
         changed = self.service.record_event(
@@ -67,6 +94,29 @@ class ServiceTests(unittest.TestCase):
         speed = self.service.speed({"raw_speed": 100, "stage": -1, "tailwind": True})
         self.assertLessEqual(damage["minimum"], damage["maximum"])
         self.assertEqual(133, speed["effective_speed"])
+
+    def test_confirmed_evs_collapse_hidden_bulk_to_one_scenario(self) -> None:
+        changed = self.service.record_event(
+            self.match_id,
+            {
+                "type": "fact_revealed",
+                "payload": {
+                    "side": "opponent",
+                    "pokemon": "charizard",
+                    "key": "evs",
+                    "value": {"hp": 252, "def": 252},
+                },
+            },
+        )
+        estimates = [
+            estimate
+            for alternative in [changed["recommendation"]["primary"]]
+            + changed["recommendation"]["alternatives"]
+            for estimate in alternative["damage"]
+            if estimate["target"] == "charizard"
+        ]
+        self.assertTrue(estimates)
+        self.assertTrue(all(estimate["scenario_count"] == 1 for estimate in estimates))
 
 
 if __name__ == "__main__":

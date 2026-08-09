@@ -48,9 +48,11 @@ function buildPreviewInputs() {
 }
 
 function renderHealth() {
-  const healthy = state.health?.status === "ok";
+  const healthy = state.health?.showdown?.available === true;
   $("#health-dot").classList.toggle("ok", healthy);
-  $("#health-label").textContent = healthy ? "Engine online" : "Engine unavailable";
+  $("#health-label").textContent = healthy
+    ? `Showdown ${state.health.showdown.version} online`
+    : "Showdown calculator unavailable";
   if (state.health?.openai_configured) {
     $("#interpreter-source")?.replaceChildren(document.createTextNode("OPENAI + FALLBACK"));
   }
@@ -128,21 +130,56 @@ function renderRecommendation() {
     return;
   }
   const primary = recommendation.primary;
+  const battle = state.match.state;
+  const damageRows = primary.damage
+    .map((estimate) => {
+      const actor = battle.player.roster[estimate.actor]?.name || estimate.actor;
+      const target = battle.opponent.roster[estimate.target]?.name || estimate.target;
+      const scenarios = estimate.scenarios
+        .map(
+          (scenario) => `
+            <div>
+              <span>${escapeHtml(scenario.name.replaceAll("_", " "))} · ${(scenario.weight * 100).toFixed(0)}%</span>
+              <b>${scenario.minimum_percent.toFixed(1)}–${scenario.maximum_percent.toFixed(1)}%</b>
+              <em>${(scenario.ko_probability * 100).toFixed(0)}% KO</em>
+            </div>`,
+        )
+        .join("");
+      return `
+        <div class="damage-line">
+          <div><strong>${escapeHtml(actor)} · ${escapeHtml(estimate.move)} → ${escapeHtml(target)}</strong><span>${estimate.scenario_count} explicit bulk scenarios</span></div>
+          <b>${estimate.minimum_percent.toFixed(1)}–${estimate.maximum_percent.toFixed(1)}%</b>
+          <em>${(estimate.knockout_probability_weighted * 100).toFixed(0)}% OHKO</em>
+          <details class="scenario-details"><summary>Inspect exact scenarios</summary>${scenarios}</details>
+        </div>`;
+    })
+    .join("");
+  const threatRows = primary.threats
+    .map((estimate) => {
+      const actor = battle.opponent.roster[estimate.actor]?.name || estimate.actor;
+      const target = battle.player.roster[estimate.target]?.name || estimate.target;
+      return `<div class="threat-line"><span>${escapeHtml(actor)} · ${escapeHtml(estimate.move)} → ${escapeHtml(target)}</span><b>${estimate.minimum_percent.toFixed(1)}–${estimate.maximum_percent.toFixed(1)}%</b><em>${(estimate.knockout_probability_weighted * 100).toFixed(0)}% KO</em></div>`;
+    })
+    .join("");
   $("#primary-recommendation").innerHTML = `
     <h2>${escapeHtml(primary.label)}</h2>
     <p>${escapeHtml(recommendation.rationale)}</p>
     <div class="score-row">
-      <div><span>Final score</span><strong>${primary.score.final_score.toFixed(1)}</strong></div>
-      <div><span>Lower tail</span><strong>${primary.score.lower_tail_utility.toFixed(1)}</strong></div>
+      <div><span>Expected damage</span><strong>${primary.score.expected_damage_percent.toFixed(1)}%</strong></div>
+      <div><span>Combined KO</span><strong>${(primary.score.knockout_probability * 100).toFixed(0)}%</strong></div>
+      <div><span>Known reply KO</span><strong>${(primary.score.incoming_knockout_probability * 100).toFixed(0)}%</strong></div>
       <div><span>Risk</span><strong>${escapeHtml(recommendation.risk).toUpperCase()}</strong></div>
-    </div>`;
+    </div>
+    <div class="damage-grid">${damageRows || '<div class="calc-warning">This line has no direct-damage calculation.</div>'}</div>
+    ${threatRows ? `<div class="threat-grid"><span>Worst replies from revealed moves</span>${threatRows}</div>` : ""}
+    <p class="calc-note">${escapeHtml(recommendation.calculator.compatibility || recommendation.calculator.message || "Official @smogon/calc")} · ${recommendation.response_model.scenarios_evaluated} simultaneous rival-response scenarios · worst 20% tail evaluated.</p>`;
   $("#alternatives").innerHTML = recommendation.alternatives
     .map(
       (alternative, index) => `
         <div class="alternative">
           <span class="alternative-index">0${index + 2}</span>
           <strong>${escapeHtml(alternative.label)}</strong>
-          <span class="alternative-score">${alternative.score.final_score.toFixed(1)}</span>
+          <span class="alternative-score">KO ${(alternative.score.knockout_probability * 100).toFixed(0)}% · ${alternative.score.final_score.toFixed(1)}</span>
         </div>`,
     )
     .join("");
@@ -243,6 +280,7 @@ function updateEventForm() {
     status_set: ["Status", "burn", "Use burn, poison, toxic, paralysis, sleep, freeze, or blank to clear."],
     boost_changed: ["Stat and delta", "spe -1", "Example: spe -1 or atk +2."],
     switch: ["Incoming Pokémon", "pokemon id", "Use the internal ID shown in the actor selector."],
+    fact_revealed: ["Fact and value", "item Leftovers", "Use item, ability, nature, level, tera_type, or EVs such as evs hp=252,def=252."],
   };
   if (config[type]) {
     label.childNodes[0].textContent = `${config[type][0]} `;
@@ -266,6 +304,20 @@ function buildEvent() {
     return { type, payload: { side, pokemon, stat, delta: Number(delta) } };
   }
   if (type === "switch") return { type, payload: { side, out: pokemon, in: value } };
+  if (type === "fact_revealed") {
+    const [key, ...parts] = value.split(/\s+/);
+    let factValue = parts.join(" ");
+    if (key === "level") factValue = Number(factValue);
+    if (["evs", "ivs"].includes(key)) {
+      factValue = Object.fromEntries(
+        factValue.split(",").map((entry) => {
+          const [stat, amount] = entry.split("=");
+          return [stat.trim(), Number(amount)];
+        }),
+      );
+    }
+    return { type, payload: { side, pokemon, key, value: factValue } };
+  }
   throw new Error("Unsupported event type");
 }
 

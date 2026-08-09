@@ -1,4 +1,7 @@
-.PHONY: run test check
+.PHONY: install run test check
+
+install:
+	npm ci --ignore-scripts
 
 run:
 	python scripts/dev.py

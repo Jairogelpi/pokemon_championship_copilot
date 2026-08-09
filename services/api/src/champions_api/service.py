@@ -10,20 +10,32 @@ from champions_copilot.team import PLAYER_TEAM, create_match
 
 from .openai_adapter import OpenAIEventInterpreter
 from .parser import interpret_locally
+from .showdown import ShowdownCalculationError, ShowdownCalculator, ShowdownUnavailable
+from .showdown_planner import calculate_turn_damage
 from .store import InMemoryStore, MatchRecord
 
 
 class AppService:
-    def __init__(self, store: InMemoryStore | None = None) -> None:
+    def __init__(
+        self,
+        store: InMemoryStore | None = None,
+        calculator: ShowdownCalculator | None = None,
+    ) -> None:
         self.store = store or InMemoryStore()
         self.openai = OpenAIEventInterpreter()
+        self.calculator = calculator or ShowdownCalculator()
+
+    def close(self) -> None:
+        self.calculator.close()
 
     def health(self) -> dict[str, Any]:
+        calculator = self.calculator.health()
         return {
-            "status": "ok",
-            "policy_version": "baseline-0.1",
-            "validation_status": "UNVALIDATED_BASELINE",
+            "status": "ok" if calculator.get("available") else "degraded",
+            "policy_version": "showdown-risk-0.2",
+            "validation_status": "SHOWDOWN_SCENARIO_MODEL",
             "openai_configured": self.openai.configured,
+            "showdown": calculator,
         }
 
     def team(self) -> dict[str, Any]:
@@ -32,8 +44,9 @@ class AppService:
             "name": "washy Ranked Season M-4 replica",
             "members": [member.to_dict() for member in PLAYER_TEAM],
             "warning": (
-                "Garchomp's fourth move and Kingambit's set must be confirmed from the replica team "
-                "before mechanics validation. They are marked set_verified=false."
+                "The displayed EVs are offensive archetype assumptions. Garchomp's fourth move and "
+                "Kingambit's set still require confirmation; Champions-only Mega data is not present "
+                "in stock Showdown Gen 9. Unverified values are exposed in every calculation."
             ),
         }
 
@@ -108,7 +121,7 @@ class AppService:
 
     def recommend(self, match_id: str) -> dict[str, Any]:
         record = self.store.get(match_id)
-        return recommend_actions(record.state, record.beliefs).to_dict()
+        return self._recommend(record)
 
     def interpret(self, match_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         text = str(payload.get("text", "")).strip()
@@ -182,6 +195,15 @@ class AppService:
             modifier=float(payload.get("modifier", 1.0)),
         ).to_dict()
 
+    def showdown_damage(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.calculator.calculate(payload)
+
+    def showdown_batch(self, payload: dict[str, Any]) -> dict[str, Any]:
+        requests = payload.get("requests")
+        if not isinstance(requests, list):
+            raise ValueError("requests must be an array")
+        return {"results": self.calculator.batch(requests)}
+
     def speed(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "effective_speed": effective_speed(
@@ -193,14 +215,41 @@ class AppService:
             )
         }
 
-    @staticmethod
-    def _record_payload(record: MatchRecord, include_recommendation: bool) -> dict[str, Any]:
+    def _recommend(self, record: MatchRecord) -> dict[str, Any]:
+        if (
+            record.recommendation_revision == record.state.revision
+            and record.cached_recommendation is not None
+        ):
+            return record.cached_recommendation
+        try:
+            damage_estimates, incoming_threats, calculator_status = calculate_turn_damage(
+                self.calculator, record.state
+            )
+        except (ShowdownUnavailable, ShowdownCalculationError) as exc:
+            damage_estimates = {}
+            incoming_threats = {}
+            calculator_status = {
+                "available": False,
+                "status": "unavailable",
+                "engine": "@smogon/calc",
+                "message": str(exc),
+            }
+        result = recommend_actions(
+            record.state,
+            record.beliefs,
+            damage_estimates=damage_estimates,
+            incoming_threats=incoming_threats,
+            calculator_status=calculator_status,
+        ).to_dict()
+        record.recommendation_revision = record.state.revision
+        record.cached_recommendation = result
+        return result
+
+    def _record_payload(self, record: MatchRecord, include_recommendation: bool) -> dict[str, Any]:
         result = record.to_dict()
         if include_recommendation and record.state.phase == "battle":
             try:
-                result["recommendation"] = recommend_actions(
-                    record.state, record.beliefs
-                ).to_dict()
+                result["recommendation"] = self._recommend(record)
             except ValueError:
                 result["recommendation"] = None
         return result

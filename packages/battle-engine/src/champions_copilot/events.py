@@ -177,7 +177,19 @@ def apply_event(state: BattleState, event: BattleEvent) -> BattleState:
         if pokemon_id not in side.roster:
             raise EventValidationError("unknown Pokémon")
         key = str(required(payload, "key"))
-        side.known_facts.setdefault(pokemon_id, {})[key] = payload.get("value")
+        if key not in {"item", "ability", "nature", "level", "evs", "ivs", "tera_type"}:
+            raise EventValidationError(f"unsupported set fact: {key}")
+        value = payload.get("value")
+        if key == "level":
+            value = int(value)
+        elif key in {"evs", "ivs"}:
+            if not isinstance(value, dict):
+                raise EventValidationError(f"{key} must be an object of stat values")
+            value = {str(stat): int(amount) for stat, amount in value.items()}
+        pokemon = side.roster[pokemon_id]
+        setattr(pokemon, key, value)
+        pokemon.__post_init__()
+        side.known_facts.setdefault(pokemon_id, {})[key] = value
 
     elif event.type == "match_finished":
         winner = required(payload, "winner")

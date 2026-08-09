@@ -107,6 +107,14 @@ class BeliefAndDecisionTests(unittest.TestCase):
             switches = [single.switch_to for single in action.actions if single.kind == "switch"]
             self.assertEqual(len(switches), len(set(switches)))
 
+    def test_joint_opponent_responses_cover_both_active_slots(self) -> None:
+        state = battle()
+        beliefs = BeliefState.from_battle(state)
+        responses = beliefs.active_joint_response_distribution(state)
+        self.assertEqual(36, len(responses))
+        self.assertAlmostEqual(1.0, sum(responses.values()))
+        self.assertTrue(any("other" in scenario for scenario in responses))
+
     def test_recommendation_is_explainable_and_deterministic(self) -> None:
         state = battle()
         beliefs = BeliefState.from_battle(state)
@@ -116,7 +124,9 @@ class BeliefAndDecisionTests(unittest.TestCase):
         self.assertTrue(first["primary"]["label"])
         self.assertEqual(3, len(first["alternatives"]))
         self.assertIn("lower_tail_utility", first["primary"]["score"])
-        self.assertEqual("UNVALIDATED_BASELINE", first["validation_status"])
+        self.assertEqual("SHOWDOWN_UNAVAILABLE", first["validation_status"])
+        self.assertEqual(False, first["calculator"]["available"])
+        self.assertEqual(36, first["response_model"]["scenarios_evaluated"])
 
 
 class MechanicsTests(unittest.TestCase):

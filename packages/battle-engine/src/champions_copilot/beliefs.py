@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import product
 from typing import Any
 
 from .events import BattleEvent
@@ -134,6 +135,23 @@ class BeliefState:
         return normalize(
             {key: sum(distribution.get(key, 0.0) for distribution in active) / len(active) for key in keys}
         )
+
+    def active_joint_response_distribution(self, state: BattleState) -> dict[str, float]:
+        active = [pokemon_id for pokemon_id in state.opponent.active if pokemon_id in self.opponent]
+        if not active:
+            return {"other": 1.0}
+        distributions = [self.opponent[pokemon_id].action_categories for pokemon_id in active]
+        joint: dict[str, float] = {}
+        for choices in product(*(distribution.items() for distribution in distributions)):
+            label = " + ".join(
+                f"{pokemon_id}:{category}"
+                for pokemon_id, (category, _) in zip(active, choices, strict=True)
+            )
+            probability = 1.0
+            for _, value in choices:
+                probability *= value
+            joint[label] = probability
+        return normalize(joint)
 
     def to_dict(self) -> dict[str, Any]:
         return {

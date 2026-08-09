@@ -1,6 +1,9 @@
 # Pokémon Champions Battle Copilot
 
-An unofficial, stateful battle assistant for Pokémon Champions doubles.
+An unofficial, stateful battle assistant for Pokémon Champions doubles. Release
+0.2 connects every live recommendation to the official
+[`@smogon/calc`](https://github.com/smogon/damage-calc) engine used by the
+Pokémon Showdown damage calculator.
 
 The project is built around one core rule: language models may interpret and
 explain a battle, but they are not the source of truth for battle state,
@@ -84,12 +87,13 @@ The first milestone is a complete manually operated match:
 
 ## Run it
 
-The current implementation has no required third-party dependencies. Python
-3.11 or newer is sufficient.
+Python 3.11+ and Node.js 20+ are required. The JavaScript dependency is pinned
+to `@smogon/calc` 0.11.0 in `package-lock.json`.
 
 ```bash
 git clone https://github.com/Jairogelpi/pokemon_championship_copilot.git
 cd pokemon_championship_copilot
+npm ci --ignore-scripts
 make check
 make run
 ```
@@ -117,7 +121,7 @@ make run
 OpenAI is an interpretation boundary only. A proposal always requires explicit
 confirmation in the UI before the deterministic engine applies it.
 
-## Implemented in baseline 0.1
+## Implemented in Showdown scenario model 0.2
 
 - Complete in-memory match lifecycle and six-versus-six team preview.
 - Bring-four and lead baseline for `GMKXPHAS7D`.
@@ -126,9 +130,27 @@ confirmation in the UI before the deterministic engine applies it.
   confirmed-fact events.
 - Opponent belief distributions that retain an `other` bucket.
 - Legal paired-action generation, switches, targets, and duplicate-slot checks.
-- Risk-aware baseline ranking with expected value, lower-tail value, strategic
-  value, information value, and catastrophic-loss probability.
-- Damage-range and effective-speed primitives.
+- Persistent Node worker around the official Smogon/Pokémon Showdown damage
+  library, with request IDs, timeouts, crash detection, health reporting, and
+  batch isolation.
+- Complete official roll distributions for every live player move/target pair,
+  including Doubles spread reduction, current HP, status, boosts, items,
+  abilities, weather, terrain, screens, Protect, and base move accuracy when
+  represented by the compatibility profile.
+- Explicit no-bulk, HP-invested, and maximum relevant-bulk opponent scenarios;
+  confirming EVs collapses the uncertainty to one scenario.
+- Exact combined double-target KO probability by convolving both moves' roll
+  distributions and their base accuracy, rather than adding two OHKO numbers.
+- Joint response expansion across both opposing slots (36 paired response
+  categories with a residual `other` branch) and a probability-weighted worst
+  20% tail instead of an unweighted scenario shortcut.
+- Reverse Showdown calculations for every revealed opposing attack against all
+  available player switch-ins. Ranking penalizes the strongest legal reply per
+  opponent, including both targets of revealed spread moves.
+- Risk-aware ranking with expected damage, combined KO chance, expected value,
+  lower-tail value, strategic value, information value, and catastrophic-loss
+  probability.
+- Effective-speed primitive for independently testable speed checks.
 - Battle console with preview, live state, recommendations, alternatives,
   belief state, fast input, interpretation proposals, log, undo, and export.
 - Real HTTP integration tests and GitHub Actions CI.
@@ -145,12 +167,40 @@ See:
 - [Implementation status](docs/implementation-status.md)
 - [ADR-0001: deterministic core](docs/adr/0001-deterministic-core.md)
 - [ADR-0002: belief-state planning](docs/adr/0002-belief-state-planning.md)
+- [ADR-0003: official Showdown calculator boundary](docs/adr/0003-showdown-calculator-boundary.md)
 
 ## Status
 
-Baseline 0.1 is runnable and tested. `STATE_ENGINE_VERIFIED` and every
-competitive quality gate remain provisional until the larger frozen corpus and
-independent validation described in the evaluation protocol exist.
+Showdown scenario model 0.2 is runnable and tested. Its damage values are exact
+under each displayed Showdown Gen 9 scenario. Pokémon Champions is not a
+one-to-one copy of Gen 9: Champions-only Mega stats, custom items, regulation
+legality, and any divergent mechanics still need an authoritative dataset.
+Those gaps are surfaced as assumptions and are never silently treated as exact.
+
+This is not yet a validated 2,000-point Master policy. That claim still requires
+the frozen benchmark and independent evaluation described in the evaluation
+protocol.
+
+## Calculator API
+
+`POST /api/calculate/showdown` accepts the same conceptual inputs as the
+official package:
+
+```json
+{
+  "generation": 9,
+  "attacker": {"name": "Garchomp", "level": 50, "nature": "Jolly", "evs": {"atk": 252}},
+  "defender": {"name": "Kingambit", "level": 50, "nature": "Adamant", "evs": {"hp": 252}},
+  "move": {"name": "Earthquake"},
+  "field": {"gameType": "Doubles"}
+}
+```
+
+The response includes all weighted rolls, absolute and percentage ranges,
+conditional KO chance, KO chance including base accuracy, and the official
+Showdown description. `POST /api/calculate/showdown/batch` accepts a `requests`
+array. A bad matchup is isolated inside the batch instead of discarding the
+valid calculations.
 
 ## Disclaimer
 

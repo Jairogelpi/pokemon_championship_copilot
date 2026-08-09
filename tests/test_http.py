@@ -78,6 +78,33 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertEqual(1, len(json.loads(exported)["events"]))
 
+    def test_official_showdown_calculation_endpoint(self) -> None:
+        status, result = self.post(
+            "/api/calculate/showdown",
+            {
+                "generation": 9,
+                "attacker": {
+                    "name": "Garchomp",
+                    "level": 50,
+                    "nature": "Jolly",
+                    "evs": {"atk": 252},
+                },
+                "defender": {
+                    "name": "Kingambit",
+                    "level": 50,
+                    "nature": "Adamant",
+                    "evs": {"hp": 252},
+                },
+                "move": {"name": "Earthquake"},
+                "field": {"gameType": "Doubles"},
+            },
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("@smogon/calc", result["source"])
+        self.assertEqual("0.11.0", result["sourceVersion"])
+        self.assertEqual(16, sum(roll["weight"] for roll in result["rolls"]))
+        self.assertLessEqual(result["minimumPercent"], result["maximumPercent"])
+
 
 if __name__ == "__main__":
     unittest.main()

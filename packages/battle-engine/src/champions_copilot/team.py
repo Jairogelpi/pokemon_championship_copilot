@@ -19,6 +19,7 @@ def pokemon(
     ability: str | None,
     nature: str | None,
     role: str,
+    evs: dict[str, int],
     verified: bool = True,
 ) -> PokemonState:
     return PokemonState(
@@ -28,6 +29,7 @@ def pokemon(
         item=item,
         ability=ability,
         nature=nature,
+        evs=evs,
         role=role,
         set_verified=verified,
     )
@@ -42,6 +44,7 @@ PLAYER_TEAM: tuple[PokemonState, ...] = (
         "Cursed Body",
         "Modest",
         "speed-control",
+        {"hp": 4, "spa": 252, "spe": 252},
     ),
     pokemon(
         "sneasler",
@@ -51,6 +54,7 @@ PLAYER_TEAM: tuple[PokemonState, ...] = (
         "Unburden",
         "Jolly",
         "disruption",
+        {"atk": 252, "spd": 4, "spe": 252},
     ),
     pokemon(
         "basculegion",
@@ -60,6 +64,7 @@ PLAYER_TEAM: tuple[PokemonState, ...] = (
         "Adaptability",
         "Adamant",
         "late-game-cleaner",
+        {"atk": 252, "spd": 4, "spe": 252},
     ),
     pokemon(
         "dragonite",
@@ -69,6 +74,7 @@ PLAYER_TEAM: tuple[PokemonState, ...] = (
         "Multiscale",
         "Modest",
         "speed-control",
+        {"hp": 4, "spa": 252, "spe": 252},
     ),
     pokemon(
         "garchomp",
@@ -78,6 +84,7 @@ PLAYER_TEAM: tuple[PokemonState, ...] = (
         "Rough Skin",
         "Jolly",
         "physical-pressure",
+        {"atk": 252, "spd": 4, "spe": 252},
         verified=False,
     ),
     pokemon(
@@ -88,6 +95,7 @@ PLAYER_TEAM: tuple[PokemonState, ...] = (
         None,
         None,
         "endgame-anchor",
+        {"hp": 252, "atk": 252, "spd": 4},
         verified=False,
     ),
 )

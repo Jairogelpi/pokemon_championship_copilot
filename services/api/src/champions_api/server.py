@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from champions_copilot.events import EventValidationError
 
 from .service import AppService
+from .showdown import ShowdownUnavailable
 
 
 class CopilotHTTPServer(ThreadingHTTPServer):
@@ -20,6 +21,10 @@ class CopilotHTTPServer(ThreadingHTTPServer):
         self.repo_root = repo_root
         self.web_root = repo_root / "apps" / "web"
         self.service = service
+
+    def server_close(self) -> None:
+        self.service.close()
+        super().server_close()
 
 
 class CopilotHandler(BaseHTTPRequestHandler):
@@ -59,6 +64,10 @@ class CopilotHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.CREATED, self.server.service.create_match(payload))
             elif path == "/api/calculate/damage":
                 self._json(HTTPStatus.OK, self.server.service.damage(payload))
+            elif path == "/api/calculate/showdown":
+                self._json(HTTPStatus.OK, self.server.service.showdown_damage(payload))
+            elif path == "/api/calculate/showdown/batch":
+                self._json(HTTPStatus.OK, self.server.service.showdown_batch(payload))
             elif path == "/api/calculate/speed":
                 self._json(HTTPStatus.OK, self.server.service.speed(payload))
             elif match := re.fullmatch(r"/api/matches/([a-f0-9]+)/events", path):
@@ -126,6 +135,8 @@ class CopilotHandler(BaseHTTPRequestHandler):
             status = HTTPStatus.BAD_REQUEST
         elif isinstance(exc, KeyError):
             status = HTTPStatus.NOT_FOUND
+        elif isinstance(exc, ShowdownUnavailable):
+            status = HTTPStatus.SERVICE_UNAVAILABLE
         else:
             status = HTTPStatus.INTERNAL_SERVER_ERROR
         self._json(status, {"error": type(exc).__name__, "message": str(exc)})

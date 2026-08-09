@@ -1,0 +1,66 @@
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "packages" / "battle-engine" / "src"))
+sys.path.insert(0, str(ROOT / "services" / "api" / "src"))
+
+from champions_copilot.decision import recommend_team_preview  # noqa: E402
+from champions_copilot.team import create_match  # noqa: E402
+from champions_api.showdown import ShowdownCalculator  # noqa: E402
+from champions_api.showdown_planner import calculate_turn_damage  # noqa: E402
+
+
+OPPONENT = ["Charizard", "Garchomp", "Kingambit", "Aerodactyl", "Sylveon", "Farigiraf"]
+
+
+class ShowdownCalculatorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.calculator = ShowdownCalculator(ROOT)
+
+    def tearDown(self) -> None:
+        self.calculator.close()
+
+    def test_health_reports_official_engine_version(self) -> None:
+        health = self.calculator.health()
+        self.assertTrue(health["available"])
+        self.assertEqual("@smogon/calc", health["engine"])
+        self.assertEqual("0.11.0", health["version"])
+
+    def test_batch_isolates_an_invalid_matchup(self) -> None:
+        valid = {
+            "generation": 9,
+            "attacker": {"name": "Garchomp", "level": 50},
+            "defender": {"name": "Kingambit", "level": 50},
+            "move": {"name": "Earthquake"},
+            "field": {"gameType": "Doubles"},
+        }
+        invalid = {**valid, "defender": {"name": "Definitely Not A Pokemon"}}
+        results = self.calculator.batch([valid, invalid])
+        self.assertTrue(results[0]["ok"])
+        self.assertFalse(results[1]["ok"])
+
+    def test_turn_matrix_covers_every_player_move_target_pair(self) -> None:
+        preview = recommend_team_preview(OPPONENT)
+        state = create_match(OPPONENT, preview["selected"], preview["lead"])
+        estimates, threats, status = calculate_turn_damage(self.calculator, state)
+        self.assertEqual(1.0, status["coverage"])
+        self.assertEqual(status["requested_matchups"], len(estimates))
+        self.assertEqual({}, threats)
+        first = next(iter(estimates.values()))
+        self.assertEqual(3, first.scenario_count)
+        self.assertTrue(all(scenario["rolls_percent"] for scenario in first.scenarios))
+
+    def test_missing_node_is_visible_and_never_fabricates_health(self) -> None:
+        calculator = ShowdownCalculator(ROOT, node_binary="/missing/node")
+        health = calculator.health()
+        self.assertFalse(health["available"])
+        self.assertEqual("unavailable", health["status"])
+
+
+if __name__ == "__main__":
+    unittest.main()
