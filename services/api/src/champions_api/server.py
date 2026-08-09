@@ -68,6 +68,17 @@ class CopilotHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.server.service.showdown_damage(payload))
             elif path == "/api/calculate/showdown/batch":
                 self._json(HTTPStatus.OK, self.server.service.showdown_batch(payload))
+            elif path == "/api/knowledge/lookup":
+                self._json(HTTPStatus.OK, self.server.service.knowledge_lookup(payload))
+            elif path == "/api/knowledge/learnset":
+                self._json(HTTPStatus.OK, self.server.service.knowledge_learnset(payload))
+            elif path == "/api/knowledge/type-matchup":
+                self._json(
+                    HTTPStatus.OK,
+                    self.server.service.knowledge_type_matchup(payload),
+                )
+            elif path == "/api/meta/species":
+                self._json(HTTPStatus.OK, self.server.service.meta_lookup(payload))
             elif path == "/api/calculate/speed":
                 self._json(HTTPStatus.OK, self.server.service.speed(payload))
             elif match := re.fullmatch(r"/api/matches/([a-f0-9]+)/events", path):

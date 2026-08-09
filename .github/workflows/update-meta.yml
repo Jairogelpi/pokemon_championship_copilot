@@ -1,0 +1,48 @@
+name: Daily Champions doubles meta
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-champions-meta
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Fetch and validate current Regulation M-B doubles meta
+        run: python scripts/update_meta.py
+      - name: Install pinned mechanics dependencies
+        run: npm ci --ignore-scripts
+      - name: Run complete regression suite
+        run: make check
+      - name: Commit a material meta change
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- data/meta/regulation-m-b-current.json; then
+            echo "Meta checked; no material change."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/meta/regulation-m-b-current.json
+          git commit -m "data: refresh Champions doubles meta"
+          git push origin HEAD:main

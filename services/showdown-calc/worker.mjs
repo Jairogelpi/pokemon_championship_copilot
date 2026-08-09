@@ -1,9 +1,11 @@
 import readline from "node:readline";
 import { createRequire } from "node:module";
+import { Generations as DataGenerations } from "@pkmn/data";
+import { Dex } from "@pkmn/dex";
 import {
   calculate,
   Field,
-  Generations,
+  Generations as CalcGenerations,
   Move,
   Pokemon,
   toID,
@@ -11,6 +13,9 @@ import {
 
 const require = createRequire(import.meta.url);
 const { version: packageVersion } = require("@smogon/calc/package.json");
+const { version: dataVersion } = require("@pkmn/data/package.json");
+const { version: dexVersion } = require("@pkmn/dex/package.json");
+const dataGenerations = new DataGenerations(Dex);
 const STATUS = {
   burn: "brn",
   poison: "psn",
@@ -96,7 +101,7 @@ function normalizedField(spec = {}) {
 
 function calculateOne(request) {
   const generation = Number(request.generation || 9);
-  const gen = Generations.get(generation);
+  const gen = CalcGenerations.get(generation);
   const attacker = buildPokemon(gen, request.attacker);
   const defender = buildPokemon(gen, request.defender);
   const move = new Move(gen, request.move?.name, {
@@ -130,7 +135,11 @@ function calculateOne(request) {
     move: move.name,
     moveCategory: move.category,
     moveType: move.type,
+    movePriority: Number(move.priority || 0),
+    moveTarget: move.target,
     spreadMove: ["allAdjacent", "allAdjacentFoes"].includes(move.target),
+    attackerSpeed: attacker.stats.spe,
+    defenderSpeed: defender.stats.spe,
     defenderMaxHP: defenderHP,
     defenderCurrentHP: currentHP,
     minimumDamage: minimum,
@@ -148,13 +157,163 @@ function calculateOne(request) {
   };
 }
 
-function handle(message) {
+function compactEffect(effect) {
+  if (!effect) throw new Error("entry was not found in the selected generation");
+  return {
+    id: effect.id,
+    name: effect.name,
+    kind: effect.kind || effect.effectType,
+    generationIntroduced: effect.gen,
+    exists: Boolean(effect.exists),
+    isNonstandard: effect.isNonstandard || null,
+    description: effect.desc || effect.shortDesc || "",
+    shortDescription: effect.shortDesc || "",
+  };
+}
+
+function compactMove(move) {
+  return {
+    ...compactEffect(move),
+    type: move.type,
+    category: move.category,
+    basePower: move.basePower,
+    accuracy: move.accuracy,
+    pp: move.pp,
+    priority: move.priority,
+    target: move.target,
+    flags: Object.keys(move.flags || {}).sort(),
+    multihit: move.multihit || null,
+    recoil: move.recoil || null,
+    drain: move.drain || null,
+    secondary: move.secondary || null,
+  };
+}
+
+function compactSpecies(species) {
+  return {
+    ...compactEffect(species),
+    baseSpecies: species.baseSpecies,
+    forme: species.forme || null,
+    types: species.types,
+    baseStats: species.baseStats,
+    baseStatTotal: species.bst,
+    abilities: species.abilities,
+    weightKg: species.weightkg,
+    preEvolution: species.prevo || null,
+    evolutions: species.evos || [],
+    otherFormes: species.otherFormes || [],
+    tier: species.tier || null,
+    doublesTier: species.doublesTier || null,
+  };
+}
+
+function lookupOne(request) {
+  const generation = Number(request.generation || 9);
+  const gen = dataGenerations.get(generation);
+  const kind = String(request.kind || "").toLowerCase();
+  const name = request.name;
+  if (!name) throw new Error("name is required");
+  let entry;
+  if (kind === "species" || kind === "pokemon") {
+    entry = compactSpecies(gen.species.get(name));
+  } else if (kind === "move") {
+    entry = compactMove(gen.moves.get(name));
+  } else if (kind === "item") {
+    const item = gen.items.get(name);
+    entry = { ...compactEffect(item), flingPower: item.fling?.basePower || null };
+  } else if (kind === "ability") {
+    entry = compactEffect(gen.abilities.get(name));
+  } else if (kind === "nature") {
+    const nature = gen.natures.get(name);
+    entry = { ...compactEffect(nature), plus: nature.plus || null, minus: nature.minus || null };
+  } else if (kind === "type") {
+    const type = gen.types.get(name);
+    entry = {
+      ...compactEffect(type),
+      category: type.category || null,
+      effectiveness: type.effectiveness,
+    };
+  } else {
+    throw new Error("kind must be species, move, item, ability, nature, or type");
+  }
+  return {
+    source: "@pkmn/dex",
+    sourceVersion: dexVersion,
+    generation,
+    entry,
+  };
+}
+
+async function learnset(request) {
+  const generation = Number(request.generation || 9);
+  const gen = dataGenerations.get(generation);
+  const species = gen.species.get(request.species);
+  if (!species) throw new Error("species was not found in the selected generation");
+  const restriction = request.restriction || undefined;
+  const learnable = await gen.learnsets.learnable(species.name, restriction);
+  const moves = Object.entries(learnable || {})
+    .map(([id, sources]) => {
+      const move = gen.moves.get(id);
+      return move ? { ...compactMove(move), sources } : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    source: "@pkmn/data + @pkmn/dex",
+    dataVersion,
+    dexVersion,
+    generation,
+    restriction: restriction || "generation-compatible transfers",
+    species: compactSpecies(species),
+    moveCount: moves.length,
+    moves,
+  };
+}
+
+function typeMatchup(request) {
+  const generation = Number(request.generation || 9);
+  const gen = dataGenerations.get(generation);
+  const attackType = gen.types.get(request.attackType);
+  const defender = gen.species.get(request.defender);
+  if (!attackType) throw new Error("attackType was not found");
+  if (!defender) throw new Error("defender species was not found");
+  return {
+    source: "@pkmn/data + @pkmn/dex",
+    generation,
+    attackType: attackType.name,
+    defender: defender.name,
+    defenderTypes: defender.types,
+    multiplier: attackType.totalEffectiveness(defender),
+  };
+}
+
+function catalog() {
+  const gen = dataGenerations.get(9);
+  return {
+    source: "@pkmn/data + @pkmn/dex",
+    generation: 9,
+    species: [...gen.species].length,
+    moves: [...gen.moves].length,
+    items: [...gen.items].length,
+    abilities: [...gen.abilities].length,
+    natures: [...gen.natures].length,
+    types: [...gen.types].length,
+  };
+}
+
+async function handle(message) {
   if (message.method === "health") {
     return {
       status: "ok",
       engine: "@smogon/calc",
       version: packageVersion,
-      protocol: 1,
+      knowledge: {
+        engine: "@pkmn/data + @pkmn/dex",
+        dataVersion,
+        dexVersion,
+        catalog: catalog(),
+      },
+      protocol: 2,
     };
   }
   if (message.method === "calculate") return calculateOne(message.params || {});
@@ -171,15 +330,20 @@ function handle(message) {
       }),
     };
   }
+  if (message.method === "lookup") return lookupOne(message.params || {});
+  if (message.method === "learnset") return learnset(message.params || {});
+  if (message.method === "type_matchup") return typeMatchup(message.params || {});
+  if (message.method === "catalog") return catalog();
   throw new Error(`unsupported method: ${message.method}`);
 }
 
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-input.on("line", (line) => {
+input.on("line", async (line) => {
   let message = {};
   try {
     message = JSON.parse(line);
-    process.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result: handle(message) })}\n`);
+    const result = await handle(message);
+    process.stdout.write(`${JSON.stringify({ id: message.id, ok: true, result })}\n`);
   } catch (error) {
     process.stdout.write(`${JSON.stringify({
       id: message.id || null,

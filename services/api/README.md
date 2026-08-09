@@ -3,8 +3,8 @@
 The HTTP layer uses Python's standard library and serves both JSON endpoints and
 the static battle console. Canonical battle state lives in the deterministic
 engine; the HTTP layer does not maintain a second representation. Exact damage
-calls cross a persistent local worker running the pinned official
-`@smogon/calc` package.
+calls cross a persistent local worker running pinned `@smogon/calc`,
+`@pkmn/data`, and `@pkmn/dex` packages.
 
 ## Endpoints
 
@@ -23,6 +23,10 @@ POST /api/calculate/damage
 POST /api/calculate/showdown
 POST /api/calculate/showdown/batch
 POST /api/calculate/speed
+POST /api/knowledge/lookup
+POST /api/knowledge/learnset
+POST /api/knowledge/type-matchup
+POST /api/meta/species
 ```
 
 ## Create a match

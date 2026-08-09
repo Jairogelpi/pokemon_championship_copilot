@@ -32,6 +32,19 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual("@smogon/calc", calculator["engine"])
         self.assertEqual(1.0, calculator["coverage"])
         self.assertTrue(self.created["recommendation"]["primary"]["damage"])
+        response_model = self.created["recommendation"]["response_model"]
+        self.assertTrue(response_model["concrete"])
+        self.assertEqual(1.0, response_model["coverage_mass"])
+        self.assertGreater(response_model["scenarios_evaluated"], 100)
+        self.assertTrue(self.created["recommendation"]["primary"]["principal_lines"])
+        self.assertGreater(calculator["modelled_opponent_moves"], 0)
+
+    def test_meta_snapshot_is_versioned_and_order_is_not_called_frequency(self) -> None:
+        meta = self.service.meta_lookup({"species": "Charizard"})
+        self.assertTrue(meta["found"])
+        self.assertEqual("2026-08-10", meta["retrieved_at"])
+        self.assertEqual("Protect", meta["pokemon"]["moves"][0])
+        self.assertIn("not a usage percentage", meta["methodology"]["ordered_fields"])
 
     def test_record_event_updates_state_and_export_replays(self) -> None:
         changed = self.service.record_event(

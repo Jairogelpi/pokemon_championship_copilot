@@ -57,6 +57,7 @@ class RankedAction:
     covers: tuple[str, ...]
     damage: tuple[dict[str, Any], ...] = ()
     threats: tuple[dict[str, Any], ...] = ()
+    principal_lines: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -66,6 +67,7 @@ class RankedAction:
             "covers": list(self.covers),
             "damage": list(self.damage),
             "threats": list(self.threats),
+            "principal_lines": list(self.principal_lines),
         }
 
 
@@ -77,6 +79,12 @@ class DamageEstimate:
     source: str
     source_version: str
     generation: int
+    move_category: str
+    move_type: str
+    move_priority: int
+    move_target: str
+    attacker_speed: int
+    defender_speed: int
     spread_move: bool
     minimum_percent: float
     maximum_percent: float
@@ -105,8 +113,8 @@ class Recommendation:
     assumptions: tuple[str, ...]
     calculator: dict[str, Any]
     response_model: dict[str, Any]
-    policy_version: str = "showdown-risk-0.2"
-    validation_status: str = "SHOWDOWN_SCENARIO_MODEL"
+    policy_version: str = "adversarial-search-0.3"
+    validation_status: str = "ADVERSARIAL_SHOWDOWN_MODEL"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -426,36 +434,229 @@ def select_incoming_threats(
     return selected
 
 
+def _acts_before(
+    state: BattleState, first: DamageEstimate, second: DamageEstimate
+) -> bool:
+    if first.move_priority != second.move_priority:
+        return first.move_priority > second.move_priority
+    if first.attacker_speed == second.attacker_speed:
+        return False
+    if state.field.trick_room_turns > 0:
+        return first.attacker_speed < second.attacker_speed
+    return first.attacker_speed > second.attacker_speed
+
+
+def _response_threats(
+    action: JointAction,
+    response: Mapping[str, Any],
+    incoming_threats: Mapping[tuple[str, str, str], DamageEstimate],
+) -> list[DamageEstimate]:
+    occupants = {
+        single.actor: single.switch_to if single.kind == "switch" else single.actor
+        for single in action.actions
+    }
+    protected = {
+        single.actor
+        for single in action.actions
+        if single.kind == "move" and single.move == "Protect"
+    }
+    threats: list[DamageEstimate] = []
+    for reply in response.get("actions", []):
+        if reply.get("kind") != "move" or reply.get("move_category") == "Status":
+            continue
+        target = reply.get("target")
+        original_targets = list(occupants) if target == "players" else [target]
+        for original_target in original_targets:
+            if original_target not in occupants or original_target in protected:
+                continue
+            actual_target = occupants[original_target]
+            estimate = incoming_threats.get(
+                (str(reply.get("actor")), str(reply.get("move")), str(actual_target))
+            )
+            if estimate is not None:
+                threats.append(estimate)
+    return threats
+
+
+def _unblocked_outgoing(
+    estimates: list[DamageEstimate], response: Mapping[str, Any]
+) -> list[DamageEstimate]:
+    denied = {
+        str(reply.get("actor"))
+        for reply in response.get("actions", [])
+        if reply.get("kind") == "switch"
+        or (reply.get("kind") == "move" and reply.get("category") == "protect")
+    }
+    return [estimate for estimate in estimates if estimate.target not in denied]
+
+
+def _incoming_after_speed_race(
+    state: BattleState,
+    outgoing: list[DamageEstimate],
+    threats: list[DamageEstimate],
+) -> tuple[float, float, list[dict[str, Any]]]:
+    incoming_damage = 0.0
+    no_ko = 1.0
+    speed_notes: list[dict[str, Any]] = []
+    for threat in threats:
+        faster_attacks = [
+            attack
+            for attack in outgoing
+            if attack.target == threat.actor and _acts_before(state, attack, threat)
+        ]
+        suppression = combined_knockout_probability(state, faster_attacks)
+        fake_out = next(
+            (attack for attack in faster_attacks if attack.move == "Fake Out"), None
+        )
+        if fake_out is not None:
+            suppression = max(suppression, fake_out.base_accuracy_probability)
+        faster_move = "+".join(attack.move for attack in faster_attacks) or None
+        survival = 1.0 - suppression
+        incoming_damage += threat.expected_percent * survival
+        no_ko *= 1.0 - threat.knockout_probability_weighted * survival
+        speed_notes.append(
+            {
+                "opponent": threat.actor,
+                "move": threat.move,
+                "priority": threat.move_priority,
+                "speed": threat.attacker_speed,
+                "suppressed_probability": round(suppression, 4),
+                "faster_player_move": faster_move,
+            }
+        )
+    return incoming_damage, 1.0 - no_ko, speed_notes
+
+
+def _concrete_outcomes(
+    state: BattleState,
+    action: JointAction,
+    estimates: list[DamageEstimate],
+    incoming_threats: Mapping[tuple[str, str, str], DamageEstimate],
+    responses: list[dict[str, Any]],
+    strategic: float,
+) -> list[dict[str, Any]]:
+    action_base = sum(base_action_value(state, single, {}) for single in action.actions)
+    outcomes: list[dict[str, Any]] = []
+    for response in responses:
+        outgoing = _unblocked_outgoing(estimates, response)
+        outgoing_damage = sum(estimate.expected_percent for estimate in outgoing)
+        outgoing_ko = combined_knockout_probability(state, outgoing)
+        threats = _response_threats(action, response, incoming_threats)
+        incoming_damage, incoming_ko, speed_notes = _incoming_after_speed_race(
+            state, outgoing, threats
+        )
+        categories = " + ".join(
+            f"{reply.get('actor')}:{reply.get('category', 'other')}"
+            for reply in response.get("actions", [])
+        )
+        offensive = action_base + 0.42 * outgoing_damage + 38 * outgoing_ko
+        value = (
+            offensive
+            + strategic
+            + scenario_adjustment(action, categories or "other")
+            - 0.22 * incoming_damage
+            - 30 * incoming_ko
+        )
+        outcomes.append(
+            {
+                "label": str(response.get("label", "other")),
+                "probability": float(response.get("probability", 0.0)),
+                "utility": value,
+                "outgoing_damage_percent": outgoing_damage,
+                "outgoing_knockout_probability": outgoing_ko,
+                "incoming_damage_percent": incoming_damage,
+                "incoming_knockout_probability": incoming_ko,
+                "actions": response.get("actions", []),
+                "threats": threats,
+                "speed_order": speed_notes,
+            }
+        )
+    return outcomes
+
+
 def score_action(
     state: BattleState,
     action: JointAction,
     damage_estimates: Mapping[tuple[str, str, str], DamageEstimate],
     incoming_threats: Mapping[tuple[str, str, str], DamageEstimate],
     response_distribution: Mapping[str, float],
+    concrete_responses: list[dict[str, Any]] | None = None,
 ) -> RankedAction:
     estimates = [
         estimate
         for single in action.actions
         for estimate in action_damage(state, single, damage_estimates)
     ]
-    expected_damage = sum(estimate.expected_percent for estimate in estimates)
-    knockout_probability = combined_knockout_probability(state, estimates)
-    threats = select_incoming_threats(action, incoming_threats)
-    incoming_damage = sum(estimate.expected_percent for estimate in threats)
-    incoming_knockout = independent_knockout_probability(
-        state, threats, target_side="player"
-    )
-    base = (
-        sum(base_action_value(state, single, damage_estimates) for single in action.actions)
-        + 38 * knockout_probability
-        - 0.22 * incoming_damage
-        - 30 * incoming_knockout
-    )
     strategic = synergy_value(state, action)
-    outcomes = [
-        (scenario, probability, base + strategic + scenario_adjustment(action, scenario))
-        for scenario, probability in response_distribution.items()
-    ]
+    principal_lines: tuple[dict[str, Any], ...] = ()
+    if concrete_responses:
+        concrete = _concrete_outcomes(
+            state,
+            action,
+            estimates,
+            incoming_threats,
+            concrete_responses,
+            strategic,
+        )
+        outcomes = [
+            (row["label"], row["probability"], row["utility"]) for row in concrete
+        ]
+        expected_damage = sum(
+            row["probability"] * row["outgoing_damage_percent"] for row in concrete
+        )
+        knockout_probability = sum(
+            row["probability"] * row["outgoing_knockout_probability"] for row in concrete
+        )
+        incoming_damage = sum(
+            row["probability"] * row["incoming_damage_percent"] for row in concrete
+        )
+        incoming_knockout = sum(
+            row["probability"] * row["incoming_knockout_probability"] for row in concrete
+        )
+        counter_lines = sorted(
+            concrete,
+            key=lambda row: (
+                row["utility"],
+                -row["probability"],
+                row["label"],
+            ),
+        )[:5]
+        principal_lines = tuple(
+            {
+                "response": row["label"],
+                "probability": round(row["probability"], 4),
+                "utility": round(row["utility"], 3),
+                "outgoing_damage_percent": round(row["outgoing_damage_percent"], 3),
+                "outgoing_knockout_probability": round(
+                    row["outgoing_knockout_probability"], 4
+                ),
+                "incoming_damage_percent": round(row["incoming_damage_percent"], 3),
+                "incoming_knockout_probability": round(
+                    row["incoming_knockout_probability"], 4
+                ),
+                "speed_order": row["speed_order"],
+            }
+            for row in counter_lines
+        )
+        threats = counter_lines[0]["threats"] if counter_lines else []
+    else:
+        expected_damage = sum(estimate.expected_percent for estimate in estimates)
+        knockout_probability = combined_knockout_probability(state, estimates)
+        threats = select_incoming_threats(action, incoming_threats)
+        incoming_damage = sum(estimate.expected_percent for estimate in threats)
+        incoming_knockout = independent_knockout_probability(
+            state, threats, target_side="player"
+        )
+        base = (
+            sum(base_action_value(state, single, damage_estimates) for single in action.actions)
+            + 38 * knockout_probability
+            - 0.22 * incoming_damage
+            - 30 * incoming_knockout
+        )
+        outcomes = [
+            (scenario, probability, base + strategic + scenario_adjustment(action, scenario))
+            for scenario, probability in response_distribution.items()
+        ]
     expected = sum(probability * value for _, probability, value in outcomes)
     lower_tail = weighted_lower_tail(outcomes) if outcomes else expected
     information = 4.0 if any(single.kind == "move" for single in action.actions) else 1.0
@@ -489,6 +690,7 @@ def score_action(
         covers=covered,
         damage=tuple(estimate.to_dict() for estimate in estimates),
         threats=tuple(estimate.to_dict() for estimate in threats),
+        principal_lines=principal_lines,
     )
 
 
@@ -498,6 +700,7 @@ def recommend_actions(
     damage_estimates: Mapping[tuple[str, str, str], DamageEstimate] | None = None,
     incoming_threats: Mapping[tuple[str, str, str], DamageEstimate] | None = None,
     calculator_status: dict[str, Any] | None = None,
+    concrete_response_model: dict[str, Any] | None = None,
 ) -> Recommendation:
     damage_estimates = damage_estimates or {}
     incoming_threats = incoming_threats or {}
@@ -505,6 +708,11 @@ def recommend_actions(
     if not candidates:
         raise ValueError("no legal paired actions are available")
     response_distribution = beliefs.active_joint_response_distribution(state)
+    concrete_responses = (
+        list(concrete_response_model.get("responses", []))
+        if concrete_response_model
+        else None
+    )
     ranked = sorted(
         (
             score_action(
@@ -513,12 +721,31 @@ def recommend_actions(
                 damage_estimates,
                 incoming_threats,
                 response_distribution,
+                concrete_responses,
             )
             for candidate in candidates
         ),
         key=lambda candidate: (-candidate.score.final_score, candidate.label),
     )
     primary = ranked[0]
+    alternatives: list[RankedAction] = []
+    for target_id in state.opponent.active:
+        candidate = next(
+            (
+                row
+                for row in ranked[1:]
+                if row not in alternatives
+                and any(estimate.get("target") == target_id for estimate in row.damage)
+            ),
+            None,
+        )
+        if candidate is not None:
+            alternatives.append(candidate)
+    for candidate in ranked[1:]:
+        if candidate not in alternatives:
+            alternatives.append(candidate)
+        if len(alternatives) >= 3:
+            break
     risk = "high" if primary.score.catastrophic_loss_probability > 0.2 else "medium"
     if primary.score.catastrophic_loss_probability <= 0.08:
         risk = "low"
@@ -526,10 +753,11 @@ def recommend_actions(
     has_showdown = bool(damage_estimates)
     rationale = (
         f"This line has the best risk-adjusted score against the current response mixture for "
-        f"{' and '.join(active_opponents)} across {len(response_distribution)} simultaneous response "
+        f"{' and '.join(active_opponents)} across "
+        f"{len(concrete_responses) if concrete_responses else len(response_distribution)} simultaneous response "
         f"scenarios. It covers {', '.join(primary.covers)} and "
         + (
-            "uses official Showdown damage rolls across the displayed opponent-set scenarios."
+            "uses pinned Showdown damage rolls across the displayed opponent-set scenarios."
             if has_showdown
             else "does not include damage numbers because the Showdown calculator is unavailable."
         )
@@ -554,23 +782,59 @@ def recommend_actions(
     }
     return Recommendation(
         primary=primary,
-        alternatives=tuple(ranked[1:4]),
+        alternatives=tuple(alternatives[:3]),
         rationale=rationale,
         risk=risk,
         assumptions=tuple(assumptions),
         calculator=status,
         response_model={
-            "scenarios_evaluated": len(response_distribution),
-            "residual_other_preserved": any(
-                "other" in scenario for scenario in response_distribution
+            "scenarios_evaluated": len(concrete_responses or response_distribution),
+            "concrete": bool(concrete_responses),
+            "residual_other_preserved": (
+                bool(concrete_response_model and concrete_response_model.get("residual_mass", 0) > 0)
+                or any("other" in scenario for scenario in response_distribution)
+            ),
+            "coverage_mass": (
+                concrete_response_model.get("coverage_mass")
+                if concrete_response_model
+                else 1.0
+            ),
+            "residual_mass": (
+                concrete_response_model.get("residual_mass")
+                if concrete_response_model
+                else 0.0
+            ),
+            "probability_semantics": (
+                concrete_response_model.get("probability_semantics")
+                if concrete_response_model
+                else "belief-category distribution"
+            ),
+            "meta": (
+                concrete_response_model.get("meta") if concrete_response_model else None
+            ),
+            "candidate_actions": (
+                concrete_response_model.get("candidate_actions", {})
+                if concrete_response_model
+                else {}
             ),
             "top_scenarios": [
-                {"scenario": scenario, "probability": round(probability, 4)}
-                for scenario, probability in sorted(
-                    response_distribution.items(), key=lambda item: (-item[1], item[0])
+                {
+                    "scenario": row.get("label"),
+                    "probability": round(float(row.get("probability", 0)), 4),
+                }
+                for row in sorted(
+                    concrete_responses or [
+                        {"label": scenario, "probability": probability}
+                        for scenario, probability in response_distribution.items()
+                    ],
+                    key=lambda item: (-float(item.get("probability", 0)), str(item.get("label"))),
                 )[:5]
             ],
             "lower_tail_mass": 0.2,
         },
-        validation_status="SHOWDOWN_SCENARIO_MODEL" if has_showdown else "SHOWDOWN_UNAVAILABLE",
+        validation_status=(
+            "ADVERSARIAL_SHOWDOWN_MODEL" if has_showdown and concrete_responses
+            else "SHOWDOWN_SCENARIO_MODEL" if has_showdown
+            else "SHOWDOWN_UNAVAILABLE"
+        ),
     )

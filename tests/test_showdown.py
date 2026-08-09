@@ -30,6 +30,19 @@ class ShowdownCalculatorTests(unittest.TestCase):
         self.assertTrue(health["available"])
         self.assertEqual("@smogon/calc", health["engine"])
         self.assertEqual("0.11.0", health["version"])
+        self.assertEqual("0.10.11", health["knowledge"]["dexVersion"])
+        self.assertGreater(health["knowledge"]["catalog"]["moves"], 600)
+
+    def test_pokedex_lookup_learnset_and_type_chart_are_queryable(self) -> None:
+        move = self.calculator.lookup("move", "Fake Out")
+        self.assertEqual(3, move["entry"]["priority"])
+        self.assertEqual("Physical", move["entry"]["category"])
+        learnset = self.calculator.learnset("Garchomp")
+        move_names = {entry["name"] for entry in learnset["moves"]}
+        self.assertIn("Earthquake", move_names)
+        self.assertIn("Protect", move_names)
+        matchup = self.calculator.type_matchup("Ground", "Charizard")
+        self.assertEqual(0, matchup["multiplier"])
 
     def test_batch_isolates_an_invalid_matchup(self) -> None:
         valid = {
