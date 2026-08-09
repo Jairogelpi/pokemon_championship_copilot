@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# JavaScript
+node_modules/
+.next/
+dist/
+coverage/
+
+# Environment and local state
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Generated battle artifacts
+artifacts/
+captures/
