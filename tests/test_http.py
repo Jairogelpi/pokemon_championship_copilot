@@ -116,7 +116,8 @@ class HTTPTests(unittest.TestCase):
         )
         self.assertEqual(200, status)
         self.assertGreater(learnset["moveCount"], 60)
-        status, meta = self.post("/api/meta/species", {"species": "Charizard"})
+        current_species = self.server.service.meta.snapshot["pokemon"][0]["name"]
+        status, meta = self.post("/api/meta/species", {"species": current_species})
         self.assertEqual(200, status)
         self.assertTrue(meta["found"])
 
