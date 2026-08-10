@@ -38,7 +38,10 @@ class PokemonState:
     fainted: bool = False
     protected: bool = False
     volatile_conditions: dict[str, int] = field(default_factory=dict)
+    can_mega_evolve: bool = False
     mega_evolved: bool = False
+    battle_form: str | None = None
+    mechanics_override: dict[str, Any] = field(default_factory=dict)
     revealed_moves: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:

@@ -30,6 +30,7 @@ from champions_copilot.search import (
 
 from .meta import MetaRepository
 from .opponent import build_response_model
+from .regulation import CurrentChampionsRegulation
 from .showdown import ShowdownCalculationError, ShowdownCalculator, ShowdownUnavailable
 from .showdown_planner import calculate_canonical_damage, calculate_canonical_speed
 
@@ -254,9 +255,15 @@ class MoveIntent:
 class VerifiedTurnResolver:
     """Resolve sampled, reachable Pokémon turns without expected-state shortcuts."""
 
-    def __init__(self, calculator: ShowdownCalculator, config: MultiTurnConfig) -> None:
+    def __init__(
+        self,
+        calculator: ShowdownCalculator,
+        config: MultiTurnConfig,
+        regulation: CurrentChampionsRegulation | None = None,
+    ) -> None:
         self.calculator = calculator
         self.config = config
+        self.regulation = regulation
         self._lookup_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._speed_cache: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self._damage_cache: dict[tuple[str, ...], dict[str, Any]] = {}
@@ -269,6 +276,8 @@ class VerifiedTurnResolver:
             "damage_cache_hits": 0,
             "speed_cache_hits": 0,
             "hidden_profiles_sampled": 0,
+            "mega_evolutions_resolved": 0,
+            "independent_per_hit_critical_checks": 0,
         }
 
     def resolve_samples(
@@ -349,6 +358,43 @@ class VerifiedTurnResolver:
                 battle=battle,
                 uncertainty=switch_in_boundary,
                 trace=(*trace, switch_in_boundary),
+                protect_chain=tuple(sorted(protect_chain.items())),
+                active_turns=tuple(sorted(active_turns.items())),
+                hidden_profiles=tuple(sorted(hidden_profiles.items())),
+                replacement_phase=state.replacement_phase,
+            )
+        mega_boundary = self._apply_player_mega(
+            battle, action, hidden_profiles, trace
+        )
+        if not mega_boundary:
+            mega_boundary = self._apply_opponent_mega(
+                battle, response, hidden_profiles, trace
+            )
+        if not mega_boundary:
+            player_megas = {
+                str(single.actor): str(single.actor)
+                for single in action.actions
+                if single.mega
+            }
+            opponent_megas = {
+                str(reply["actor"]): str(reply["actor"])
+                for reply in response.get("actions", [])
+                if reply.get("mega")
+            }
+            if player_megas or opponent_megas:
+                mega_boundary = self._switch_in_boundary(
+                    battle,
+                    player_megas,
+                    opponent_megas,
+                    hidden_profiles,
+                    trace,
+                )
+        if mega_boundary:
+            self._record_uncertainty(mega_boundary)
+            return PlanningState(
+                battle=battle,
+                uncertainty=mega_boundary,
+                trace=(*trace, mega_boundary),
                 protect_chain=tuple(sorted(protect_chain.items())),
                 active_turns=tuple(sorted(active_turns.items())),
                 hidden_profiles=tuple(sorted(hidden_profiles.items())),
@@ -882,6 +928,112 @@ class VerifiedTurnResolver:
             trace.append(f"opponent switch {outgoing}→{incoming}")
         return switches
 
+    def _apply_player_mega(
+        self,
+        battle: BattleState,
+        action: JointAction,
+        hidden_profiles: dict[str, str],
+        trace: list[str],
+    ) -> str | None:
+        requests = [single for single in action.actions if single.mega]
+        if not requests:
+            return None
+        if len(requests) != 1:
+            return "illegal_multiple_mega_evolutions"
+        single = requests[0]
+        pokemon = battle.player.roster.get(single.actor)
+        if (
+            pokemon is None
+            or pokemon.fainted
+            or pokemon.id not in battle.player.active
+            or not pokemon.can_mega_evolve
+            or pokemon.mega_evolved
+        ):
+            return "illegal_mega_evolution_state"
+        if any(
+            member.mega_evolved
+            for member in battle.player.roster.values()
+            if member.id != pokemon.id
+        ):
+            return "mega_evolution_already_used"
+        if self.regulation is None:
+            return "mega_mechanics_snapshot_unavailable"
+        try:
+            resolved = self.regulation.mega_evolution(pokemon.name, item=pokemon.item)
+        except ValueError:
+            return "mega_form_not_legal_in_current_champions"
+        pokemon.mega_evolved = True
+        pokemon.can_mega_evolve = False
+        pokemon.battle_form = str(resolved["battle_form"])
+        pokemon.mechanics_override = dict(resolved["mechanics_override"])
+        pokemon.ability = str(resolved["ability"])
+        self.telemetry["mega_evolutions_resolved"] += 1
+        trace.append(
+            f"{pokemon.name} Mega Evolved into {pokemon.battle_form} "
+            f"({pokemon.ability})"
+        )
+        return None
+
+    def _apply_opponent_mega(
+        self,
+        battle: BattleState,
+        response: dict[str, Any],
+        hidden_profiles: dict[str, str],
+        trace: list[str],
+    ) -> str | None:
+        requests = [reply for reply in response.get("actions", []) if reply.get("mega")]
+        if not requests:
+            return None
+        if len(requests) != 1:
+            return "illegal_multiple_opponent_mega_evolutions"
+        reply = requests[0]
+        actor_id = str(reply.get("actor", ""))
+        pokemon = battle.opponent.roster.get(actor_id)
+        if (
+            pokemon is None
+            or pokemon.fainted
+            or actor_id not in battle.opponent.active
+            or pokemon.mega_evolved
+            or any(
+                member.mega_evolved
+                for member in battle.opponent.roster.values()
+                if member.id != actor_id
+            )
+        ):
+            return "illegal_opponent_mega_evolution_state"
+        if self.regulation is None:
+            return "mega_mechanics_snapshot_unavailable"
+        stone = str(reply.get("mega_stone", "")) or None
+        form = str(reply.get("mega_form", "")) or None
+        try:
+            resolved = self.regulation.mega_evolution(
+                pokemon.name,
+                item=stone,
+                form=form,
+            )
+        except ValueError:
+            return "opponent_mega_form_not_legal_in_current_champions"
+        pokemon.item = str(resolved["mega_stone"])
+        pokemon.mega_evolved = True
+        pokemon.can_mega_evolve = False
+        pokemon.battle_form = str(resolved["battle_form"])
+        pokemon.mechanics_override = dict(resolved["mechanics_override"])
+        pokemon.ability = str(resolved["ability"])
+        battle.opponent.known_facts.setdefault(actor_id, {})["item"] = pokemon.item
+        battle.opponent.known_facts[actor_id]["ability"] = pokemon.ability
+        profile_key = f"opponent:{actor_id}"
+        if profile_key in hidden_profiles:
+            profile = json.loads(hidden_profiles[profile_key])
+            profile["item"] = pokemon.item
+            profile["ability"] = pokemon.ability
+            hidden_profiles[profile_key] = json.dumps(profile, sort_keys=True)
+        self.telemetry["mega_evolutions_resolved"] += 1
+        trace.append(
+            f"opponent {pokemon.name} Mega Evolved into {pokemon.battle_form} "
+            f"({pokemon.ability})"
+        )
+        return None
+
     def _move_intents(
         self,
         battle: BattleState,
@@ -1075,6 +1227,37 @@ class VerifiedTurnResolver:
                 )["hits"]
             else:
                 hits = rng.randint(low, high)
+        if hits and hits > 1:
+            move_id = str(move_data.get("id", "")).lower()
+            if move_id in {"beatup", "dragondarts", "populationbomb", "tripleaxel", "triplekick"}:
+                raise ValueError(f"per-hit callback is not verified for {move}")
+            criticals = [critical]
+            for _ in range(hits - 1):
+                criticals.append(
+                    bool(
+                        defender_ability not in {"Battle Armor", "Shell Armor"}
+                        and (
+                            forced_crit
+                            or rng.random()
+                            < crit_rates[min(crit_stage, len(crit_rates) - 1)]
+                        )
+                    )
+                )
+            self.telemetry["independent_per_hit_critical_checks"] += hits
+            return self._sample_equal_power_multi_hit_damage(
+                battle=battle,
+                side=side,
+                actor=actor,
+                move=move,
+                target_side=target_side,
+                target=target,
+                rng=rng,
+                attacker_profile=attacker_profile,
+                defender_profile=defender_profile,
+                attacker_profile_key=attacker_profile_key,
+                defender_profile_key=defender_profile_key,
+                criticals=criticals,
+            )
         key = (
             self._structural_key(battle),
             side,
@@ -1128,6 +1311,95 @@ class VerifiedTurnResolver:
             scenario_name,
             float(roll["damage"]),
             int(scenario["defender_max_hp"]),
+        )
+
+    def _sample_equal_power_multi_hit_damage(
+        self,
+        *,
+        battle: BattleState,
+        side: str,
+        actor: str,
+        move: str,
+        target_side: str,
+        target: str,
+        rng: random.Random,
+        attacker_profile: dict[str, Any] | None,
+        defender_profile: dict[str, Any] | None,
+        attacker_profile_key: str,
+        defender_profile_key: str,
+        criticals: list[bool],
+    ) -> tuple[float, bool, str, float, int]:
+        results: dict[bool, dict[str, Any]] = {}
+        for critical in sorted(set(criticals)):
+            key = (
+                self._structural_key(battle),
+                side,
+                actor,
+                move.lower(),
+                target_side,
+                target,
+                attacker_profile_key,
+                defender_profile_key,
+                "critical" if critical else "normal",
+                "per-hit",
+            )
+            if key in self._damage_cache:
+                self.telemetry["damage_cache_hits"] += 1
+                result = self._damage_cache[key]
+            else:
+                result = calculate_canonical_damage(
+                    self.calculator,
+                    battle,
+                    side=side,
+                    actor_id=actor,
+                    move=move,
+                    target_id=target,
+                    target_side=target_side,
+                    attacker_profile=attacker_profile,
+                    defender_profile=defender_profile,
+                    critical=critical,
+                    hits=1,
+                )
+                self._damage_cache[key] = result
+            if not result.get("damage_applicable"):
+                raise ValueError("status move reached multi-hit damage sampler")
+            results[critical] = result
+
+        first_estimate = results[criticals[0]]["estimate"]
+        first_scenario = self._weighted_choice(
+            list(first_estimate["scenarios"]), "weight", rng
+        )
+        scenario_name = str(first_scenario["name"])
+        accuracy = float(first_scenario.get("base_accuracy_probability", 1.0))
+        if rng.random() > accuracy:
+            return 0.0, False, f"{scenario_name}:{len(criticals)}-hits", 0.0, int(
+                first_scenario["defender_max_hp"]
+            )
+
+        percent = 0.0
+        damage_units = 0.0
+        for critical in criticals:
+            estimate = results[critical]["estimate"]
+            scenario = next(
+                (
+                    row
+                    for row in estimate["scenarios"]
+                    if row["name"] == first_scenario["name"]
+                ),
+                estimate["scenarios"][0],
+            )
+            roll = self._weighted_choice(
+                list(scenario["rolls_percent"]), "weight", rng
+            )
+            percent += float(roll["percent"])
+            damage_units += float(roll["damage"])
+        critical_hits = sum(criticals)
+        return (
+            percent,
+            True,
+            f"{scenario_name}:{len(criticals)}-hits:{critical_hits}-critical-hits",
+            damage_units,
+            int(first_scenario["defender_max_hp"]),
         )
 
     def _hidden_profile(
@@ -2313,7 +2585,7 @@ class VerifiedBattleGame:
         self.recommendation = recommendation
         self.response_model = response_model
         self.config = config
-        self.resolver = VerifiedTurnResolver(calculator, config)
+        self.resolver = VerifiedTurnResolver(calculator, config, meta.regulation)
         self.root_key = ""
         self.root_actions = tuple(
             candidate.action
@@ -2597,8 +2869,9 @@ class MultiTurnPlanner:
                 "the explicit residual-other opponent hypothesis remains an uncertainty leaf",
                 "unimplemented volatile, move-specific, item, and ability effects remain "
                 "named uncertainty leaves",
-                "multi-hit critical hits are sampled at move level rather than independently "
-                "per hit",
+                "equal-power multi-hit moves sample critical hits independently per hit; "
+                "Beat Up, Dragon Darts, Population Bomb, Triple Axel, and Triple Kick "
+                "remain named per-hit callback boundaries",
                 "legacy Champions species use their latest official species and learnset data "
                 "inside the generation-9 calculator",
                 "opponent responses use deterministic seeded systematic samples of the full "
@@ -2681,6 +2954,6 @@ class MultiTurnPlanner:
                 "coverage remains one-turn only.",
             ),
             multi_turn=analysis,
-            policy_version="verified-sampled-multiturn-0.7",
+            policy_version="verified-sampled-multiturn-0.8",
             validation_status="VERIFIED_SAMPLED_MULTITURN_SEARCH",
         )

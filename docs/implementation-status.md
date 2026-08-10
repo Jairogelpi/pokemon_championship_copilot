@@ -2,7 +2,7 @@
 
 ## Current release boundary
 
-Codex strategist 0.7 is a complete vertical slice. A user can start the server,
+Codex strategist 0.8 is a complete vertical slice. A user can start the server,
 enter a team preview, receive a bring-four and lead baseline, record a match,
 inspect beliefs, request paired actions, correct history, and export a replayable
 log. With OpenAI credentials, Codex makes the final strategic selection from a
@@ -17,22 +17,23 @@ deterministic anchor.
 | Immutable event log | Implemented | Replay equality tests |
 | Append-only corrections | Implemented | Correction and export tests |
 | Belief normalization | Implemented | Probability invariant tests |
-| Legal paired actions | Implemented baseline | Duplicate-switch invariant test |
+| Current-format legality | Fail-closed M-B/M-5 contract | 231 base forms, 75 Megas, 148 items, 486 moves, 231 exact learnsets; active-window and rejection tests |
+| Legal paired actions | Current-only, including one Mega branch per side | Duplicate-switch, Mega uniqueness, form resolution, and action-generation tests |
 | Showdown damage | Implemented for Gen 9 compatibility | Worker smoke, API, batch-isolation, and matrix tests |
-| Mechanics knowledge | 876 species/forms, 685 moves, learnsets, items, abilities, natures, and types | Worker and HTTP knowledge tests |
-| Regulation strategy priors | Versioned Regulation M-B S3 snapshot for 25 Pokémon | Provenance, date, method, and meta API test |
+| Mechanics knowledge | Current Champions registry at the decision boundary; pinned upstream mechanics underneath | Regulation, worker, calculator and HTTP knowledge tests |
+| Regulation strategy priors | Current M-B/M-5 snapshot for 45 legal Pokémon | Provenance, legality filter, rejected-value audit, date, method, and meta API tests |
 | Daily meta refresh | Scheduled, manual, fail-closed GitHub Actions workflow | Parser, schema, no-change, and full regression gates |
 | Hidden bulk scenarios | Implemented | Scenario aggregation and confirmed-EV tests |
 | Combined double-target KO | Implemented | Weighted roll convolution in decision engine |
 | Modelled incoming threats | Implemented for revealed + top meta candidates | Reverse matrix includes active and switch-in targets |
 | Priority and scenario speed | Implemented in one-turn race evaluation | Damage metadata and principal-line output |
-| Concrete joint responses | Exhaustive inside the bounded model | Moves, targets, Protect, legal switches, other branch, coverage test |
+| Concrete joint responses | Exhaustive inside the bounded model | Moves, targets, Protect, legal switches, current Mega branches, other branch, and coverage tests |
 | Decision ranking | One-turn adversarial search with principal lines | Determinism, explanation, coverage, and service tests |
 | Multi-ply search kernel | Implemented and live-wired at depth two | Iterative-depth, risk-tail, cache, budget, and service integration tests |
 | Sampled battle transition adapter | Implemented broad compatibility profile | Replacements, critical/multi-hit damage, status counters, switching, speed, contact, entry, residual, item, spread, and deterministic replay tests |
 | Multi-turn promotion gate | Implemented, fail-closed at 90% | Completed-depth, modeled probability mass, declared-mechanics resolution, uncertainty reasons, and fallback assertions |
 | Reference verified frontier | 90.18% response probability; 100% declared mechanics | Charizard + Garchomp fixture regression |
-| Champions-expanded species | Latest official legacy record under Gen 9 mechanics | Aerodactyl lookup, learnset, speed, and calculation regression |
+| Champions Mega overlay | Pinned current form stats, types, abilities and Mega Stones | Dragonite/Froslass/Charizard resolution, exact override, weather activation, and calculator branch tests |
 | HTTP API | Implemented | Real socket integration tests |
 | Battle console | Implemented | Served by the tested HTTP boundary |
 | Local text interpretation | Implemented | Spanish HP proposal test |
@@ -46,17 +47,17 @@ deterministic anchor.
 
 ## Not yet complete
 
-- Authoritative Champions mechanics and regulation dataset.
 - Exact verification of Garchomp's fourth move and Kingambit's complete set for
   replica team `GMKXPHAS7D`.
-- Authoritative Champions divergences from Showdown Gen 9, especially custom
-  Mega forms and items. Stock Showdown mechanics are integrated and labelled as
-  a compatibility profile rather than silently assumed to be Champions truth.
 - Complete coverage for every rare volatile, move-specific callback, ability,
-  item, independent per-hit critical event, and Champions-specific divergence.
-  Unsupported branches still terminate as named uncertainty leaves.
+  item, callback-changing multi-hit move, and Champions-specific divergence.
+  Equal-power multi-hit critical checks are independent; unsupported special
+  branches still terminate as named uncertainty leaves.
+- Automatic promotion to the next regulation. The current snapshot stops
+  recommendations at expiry until a newly verified snapshot is committed.
 - Observation-driven belief updates inside future branches, calibrated set
-  priors, wider response sampling, and an endgame solver.
+  priors, wider response sampling, and a true exhaustive stochastic endgame
+  solver. The current multi-turn search remains sampled and says so explicitly.
 - Calibrated win-value model and policy weights.
 - Durable server-side match storage and accounts.
 - Screenshot, continuous capture, OCR, and HP-bar measurement.
@@ -68,7 +69,8 @@ deterministic anchor.
 The current product is:
 
 > A runnable, state-correct Battle Copilot with pinned Showdown damage rolls,
-> queryable mechanics data, versioned meta priors, explicit hidden-information
+> a fail-closed current-Champions legality registry, searched Mega Evolution,
+> queryable mechanics data, versioned current meta priors, explicit hidden-information
 > uncertainty, exhaustive bounded one-turn replies, verified-sampled two-turn
 > continuations with explicit uncertainty leaves, inspectable principal lines,
 > and optional tool-grounded Codex strategic selection restricted to verified

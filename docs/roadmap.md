@@ -5,6 +5,11 @@
 Deliver versioned Champions-specific species, moves, abilities, items, Mega,
 type, targeting, and regulation schemas with provenance.
 
+Current boundary: the live M-B/M-5 roster, items, moves, per-species learnsets,
+Mega Stones, Mega stats/types/abilities, activity window, and source hashes are
+pinned and enforced. Rare effect constants still require verified mechanics
+fixtures before this phase exits.
+
 Exit: every required datum has a source, version, validation rule, and update
 policy.
 
@@ -42,7 +47,7 @@ multi-hit, status, contact, entry, item, weather, and residual mechanics needed
 by the supported team and current meta. Its reference verified frontier is
 90.18%; remaining unknown responses and unsupported callbacks fail closed.
 
-Codex strategist 0.7 may research the canonical position with read-only
+Codex strategist 0.8 may research the canonical position with read-only
 mechanics, learnset, meta, matchup, candidate, and damage tools before selecting
 a strategically preferable line from the top twelve verified candidates. Codex
 is not allowed to manufacture future battle states; it receives only states

@@ -1,9 +1,10 @@
 # Pokémon Champions Battle Copilot
 
 An unofficial, stateful battle assistant for Pokémon Champions doubles. Release
-0.7 closes the most important mechanics gaps in the live two-turn search and
-connects Codex to sampled, reachable future battle states grounded in the pinned
-upstream
+0.8 adds a fail-closed, current-format boundary: the engine only accepts the
+Pokémon, moves, held items, Mega Stones, and learnsets legal in Regulation M-B,
+Ranked Season M-5. It connects Codex to sampled, reachable future battle states
+grounded in the pinned upstream
 [`@smogon/calc`](https://github.com/smogon/damage-calc) engine used by the
 Pokémon Showdown damage calculator.
 
@@ -14,7 +15,7 @@ mechanics, legality, damage, or speed.
 ## North-star goal
 
 Build a decision system whose play quality can be demonstrated at the level of
-a 2,000-point Master player for its supported team and regulation. Release 0.7
+a 2,000-point Master player for its supported team and regulation. Release 0.8
 combines exhaustive bounded one-turn evaluation, a mechanics-closed sampled
 two-turn search, and tool-grounded Codex selection. The reference fixture has a
 90.18% verified probability frontier and resolves 100% of declared mechanics;
@@ -41,8 +42,13 @@ The copilot must:
 - explain recommendations in concise competitive language;
 - replay a battle from its event log for review and debugging.
 
-The first supported player team is the washy Ranked Season M-4 replica team
-`GMKXPHAS7D`. Froslass uses Blizzard / Shadow Ball / Aurora Veil / Protect.
+The first supported player team is the washy team `GMKXPHAS7D`, originally
+recorded in Ranked Season M-4 and revalidated against the current M-B/M-5
+legality snapshot. Froslass uses Blizzard / Shadow Ball / Aurora Veil / Protect.
+
+The current snapshot is valid from 17 June through 2 September 2026. Once that
+verified window expires, recommendations stop instead of silently playing an
+old regulation. Meta evidence is also coupled to the same snapshot ID.
 
 ## Repository shape
 
@@ -137,17 +143,17 @@ reachable sampled outcomes, and explicit uncertainty boundaries. Multi-turn
 search defaults on when Codex is configured and can be tuned through the
 `MULTITURN_*` variables in `.env.example`.
 Before selecting, the Responses API requires at least one read-only tool call.
-Codex can inspect candidates and exact damage matrices, query any Gen 9 species,
-move, item, ability, nature or type, load complete learnsets, test type matchups,
-read dated meta priors, and calculate a hidden-but-learnable move against the
-canonical live position. Tool results retain their source and cannot mutate the
-match.
+Codex can inspect candidates and exact damage matrices, query only current legal
+Champions species, moves, and items, load exact current learnsets, test type
+matchups, read dated meta priors, and calculate a hidden-but-learnable move
+against the canonical live position. Tool results retain their source and
+cannot mutate the match.
 It returns a schema-constrained candidate ID, opponent-plan hypotheses, win
 condition, failure mode, risk, and explanation. Invalid output, refusal,
 timeout, or API failure falls back to the deterministic anchor. Event proposals
 still require explicit confirmation before the engine applies them.
 
-## Implemented in Codex strategist 0.7
+## Implemented in Codex strategist 0.8
 
 - Complete in-memory match lifecycle and six-versus-six team preview.
 - Bring-four and lead baseline for `GMKXPHAS7D`.
@@ -177,19 +183,23 @@ still require explicit confirmation before the engine applies them.
   lower-tail value, strategic value, information value, and catastrophic-loss
   probability.
 - Effective-speed primitive for independently testable speed checks.
-- Queryable Gen 9 knowledge service backed by pinned `@pkmn/data` and
-  `@pkmn/dex`: 876 species/forms, 685 moves, 249 items, 310 abilities, 25
-  natures, 19 types, legal generation-compatible learnsets, and type matchups.
-- Dated Regulation M-B S3 strategy snapshot covering the ordered moves, items,
-  abilities, rank, and win rate for 25 meta Pokémon. Order is converted into a
-  labelled heuristic prior and is never presented as observed action frequency.
-- Daily GitHub Actions meta refresh at 05:17 UTC. It fetches the current M-B S3
-  ranked pages, extracts source-reported move/item/ability usage and win rates,
-  rejects partial or malformed results, runs every regression, and commits only
-  a material data change. Git history preserves previous snapshots.
+- Fail-closed Regulation M-B/M-5 registry: 231 legal base species/forms, 75
+  Mega forms, 148 legal items, 486 legal moves, and an exact per-species
+  Champions learnset for every roster entry. Team preview, revealed facts,
+  knowledge tools, and recommendation generation all share this boundary.
+- Current Mega Evolution is a searched action, not a note. The engine resolves
+  the held stone to one form, applies the pinned base stats, types and ability,
+  triggers weather/terrain/entry effects, and prevents a second Mega on the side.
+- Dated current M-B/M-5 strategy snapshot covering 45 legal meta Pokémon. Public
+  usage evidence is filtered through the Champions roster, item list and each
+  species' current learnset; rejected source values are retained for audit.
+- Daily GitHub Actions meta refresh at 05:17 UTC. It fetches the current M-B
+  rankings, rejects non-Champions values and malformed or sparse results, runs
+  every regression, and commits only a material data change. Git history
+  preserves previous snapshots.
 - Concrete opponent-action generation for both active slots: candidate moves,
-  all live single targets, spread targets, Protect, legal bench switches, and
-  a residual hidden-response branch.
+  all live single targets, spread targets, Protect, legal bench switches,
+  current legal Mega forms/stones, and a residual hidden-response branch.
 - Exhaustive Cartesian enumeration of the bounded response model (458 legal
   joint replies in the default Charizard + Garchomp fixture), using ten ranked
   meta move candidates per active Pokémon and preserving an explicit 9.82%
@@ -266,13 +276,14 @@ See:
 
 ## Status
 
-Codex strategist 0.7 is runnable and tested. When an API key is configured,
+Codex strategist 0.8 is runnable and tested. When an API key is configured,
 Codex owns the final strategic choice inside the verified candidate envelope;
 otherwise the same endpoint degrades to the deterministic anchor. Damage values
-are exact under each displayed Showdown Gen 9 scenario. Pokémon Champions is not a
-one-to-one copy of Gen 9: Champions-only Mega stats, custom items, regulation
-legality, and any divergent mechanics still need an authoritative dataset.
-Those gaps are surfaced as assumptions and are never silently treated as exact.
+are exact under each displayed calculator scenario, including pinned Champions
+Mega stat/type/ability overrides. Rare unpublished Champions effect constants
+and callback-changing multi-hit moves remain explicit gaps; equal-power
+multi-hit moves already roll critical hits independently per hit. Unsupported
+cases are never silently treated as exact.
 
 This is not yet a validated 2,000-point Master policy. That claim still requires
 the frozen benchmark and independent evaluation described in the evaluation
@@ -303,9 +314,12 @@ The mechanics knowledge endpoints are:
 
 ```text
 POST /api/knowledge/lookup        species, move, item, ability, nature, or type
-POST /api/knowledge/learnset      generation-compatible legal move pool
+POST /api/knowledge/learnset      current Champions per-species move pool
 POST /api/knowledge/type-matchup  attacking type against a defending species
-POST /api/meta/species            dated Regulation M-B S3 strategy entry
+GET  /api/regulation/current      pinned live format, window, counts, and sources
+POST /api/regulation/lookup       current species, move, item, or Mega lookup
+POST /api/regulation/validate     six-Pokémon current-format preview validation
+POST /api/meta/species            dated current M-B/M-5 strategy entry
 ```
 
 “100% response coverage” means every joint response generated from the current
@@ -321,9 +335,10 @@ The scheduled updater can also be run manually from the Actions tab or locally:
 python scripts/update_meta.py
 ```
 
-The updater is fail-closed: an HTTP error, format change, fewer than 20 complete
-entries, missing moves/items/abilities, duplicate ranks, or an invalid win rate
-causes the job to fail without replacing the last valid snapshot.
+The updater is fail-closed: an HTTP error, format change, sparse rankings,
+unknown species, or a source move/item outside the pinned Champions registry
+cannot broaden legality. Invalid values are rejected, and a malformed refresh
+cannot replace the last valid snapshot.
 
 ## Disclaimer
 

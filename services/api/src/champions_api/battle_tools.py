@@ -7,6 +7,7 @@ from champions_copilot.decision import RankedAction, Recommendation
 from champions_copilot.models import BattleState
 
 from .meta import MetaRepository
+from .regulation import CurrentChampionsRegulation
 from .showdown import ShowdownCalculationError, ShowdownCalculator, ShowdownUnavailable
 from .showdown_planner import calculate_canonical_damage
 
@@ -26,12 +27,14 @@ class BattleKnowledgeTools:
         *,
         calculator: ShowdownCalculator,
         meta: MetaRepository,
+        regulation: CurrentChampionsRegulation | None = None,
         state: BattleState,
         beliefs: BeliefState,
         recommendation: Recommendation,
     ) -> None:
         self.calculator = calculator
         self.meta = meta
+        self.regulation = regulation or meta.regulation
         self.state = state
         self.beliefs = beliefs
         self.recommendation = recommendation
@@ -50,6 +53,7 @@ class BattleKnowledgeTools:
             "multi_turn": self.recommendation.multi_turn,
             "mechanics": self.recommendation.calculator,
             "meta": self.meta.status(),
+            "regulation": self.regulation.status(),
             "active_player": [
                 self.state.player.roster[pokemon_id].name
                 for pokemon_id in self.state.player.active
@@ -59,8 +63,9 @@ class BattleKnowledgeTools:
                 for pokemon_id in self.state.opponent.active
             ],
             "authority_boundary": {
-                "mechanics": "pinned @pkmn/dex, @pkmn/data, and @smogon/calc",
-                "strategy_priors": "dated community meta snapshot",
+                "legality": "pinned current Pokemon Champions regulation snapshot",
+                "mechanics": "Champions legality and movepools plus pinned @pkmn/dex and @smogon/calc compatibility evidence",
+                "strategy_priors": "current-format community meta snapshot, filtered through Champions legality",
                 "hidden_information": "belief distribution plus explicit unknown branches",
             },
         }
@@ -106,7 +111,7 @@ class BattleKnowledgeTools:
             ),
             self._definition(
                 "calculate_verified_damage",
-                "Test any active actor's Gen 9-learnable move against a current target using canonical state and pinned damage rolls.",
+                "Test a current-Champions-legal move for an active actor against a current target using canonical state and pinned damage rolls.",
                 {
                     "type": "object",
                     "properties": {
@@ -121,7 +126,7 @@ class BattleKnowledgeTools:
             ),
             self._definition(
                 "lookup_battle_entity",
-                "Query pinned Gen 9 data for a species, move, item, ability, nature, or type.",
+                "Query pinned mechanics data; species, moves, and items must be legal in the active Champions format.",
                 {
                     "type": "object",
                     "properties": {
@@ -134,7 +139,7 @@ class BattleKnowledgeTools:
             ),
             self._definition(
                 "lookup_learnset",
-                "Query the complete generation-compatible learnset for a species.",
+                "Query the complete current Pokemon Champions movepool for a legal species.",
                 {
                     "type": "object",
                     "properties": {
@@ -277,10 +282,16 @@ class BattleKnowledgeTools:
         if kind not in self.ENTITY_KINDS:
             raise ValueError(f"unsupported entity kind: {kind}")
         name = self._required_text(arguments, "name")
+        legality = None
+        if kind in {"species", "move", "item"}:
+            legality = self.regulation.lookup(kind, name)
+            if not legality["legal"]:
+                raise ValueError(f"entity is outside current Champions Doubles: {kind} {name}")
         return {
             "ok": True,
             "source": "pinned_@pkmn/dex",
             "result": self.calculator.lookup(kind, name, generation=9),
+            "champions_legality": legality,
         }
 
     def _resolve_pokemon_id(self, side: str, value: str) -> str:
@@ -305,6 +316,8 @@ class BattleKnowledgeTools:
             target_side, self._required_text(arguments, "target")
         )
         move = self._required_text(arguments, "move")
+        actor_species = self.state.side(side).roster[actor].name
+        self.regulation.assert_move(actor_species, move)
         return {
             "ok": True,
             "source": "canonical_state_plus_pinned_learnset_and_@smogon/calc",
@@ -323,18 +336,24 @@ class BattleKnowledgeTools:
         restriction_value = arguments.get("restriction")
         if restriction_value is not None and not isinstance(restriction_value, str):
             raise TypeError("restriction must be a string or null")
-        restriction = restriction_value.strip() if restriction_value else None
+        if restriction_value:
+            raise ValueError("generic generation restrictions are not used in Champions mode")
+        result = self.regulation.learnset(species)
         return {
             "ok": True,
-            "source": "pinned_@pkmn/data_and_@pkmn/dex",
-            "result": self.calculator.learnset(
-                species, generation=9, restriction=restriction
-            ),
+            "source": "pinned_current_champions_movepool",
+            "result": {
+                **result,
+                "moveCount": result["move_count"],
+                "moves": [{"name": move} for move in result["moves"]],
+            },
         }
 
     def _lookup_type_matchup(self, arguments: dict[str, Any]) -> dict[str, Any]:
         attack_type = self._required_text(arguments, "attack_type")
         defender = self._required_text(arguments, "defender")
+        if not self.regulation.is_species_legal(defender):
+            raise ValueError(f"defender is outside current Champions Doubles: {defender}")
         return {
             "ok": True,
             "source": "pinned_@pkmn/dex_type_chart",
@@ -343,6 +362,8 @@ class BattleKnowledgeTools:
 
     def _lookup_meta(self, arguments: dict[str, Any]) -> dict[str, Any]:
         species = self._required_text(arguments, "species")
+        if not self.regulation.is_species_legal(species):
+            raise ValueError(f"species is outside current Champions Doubles: {species}")
         return {
             "ok": True,
             "source": "versioned_strategy_prior_not_mechanics",

@@ -66,6 +66,31 @@ class ServiceTests(unittest.TestCase):
         self.assertGreaterEqual(len(meta["pokemon"]["moves"]), 3)
         self.assertIn("planner", meta["methodology"]["action_prior"].lower())
 
+    def test_current_champions_boundary_rejects_out_of_format_preview(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not legal in current Champions"):
+            self.service.create_match(
+                {
+                    "opponent_team": [
+                        "Mewtwo",
+                        "Garchomp",
+                        "Kingambit",
+                        "Aerodactyl",
+                        "Sylveon",
+                        "Farigiraf",
+                    ]
+                }
+            )
+
+    def test_recommendation_is_pinned_to_current_regulation_snapshot(self) -> None:
+        health = self.service.health()
+        self.assertTrue(health["regulation"]["active"])
+        self.assertTrue(health["regulation"]["fail_closed"])
+        self.assertEqual("M-B", health["regulation"]["regulation"])
+        self.assertEqual(
+            health["regulation"]["snapshot_id"],
+            health["meta"]["regulation_snapshot_id"],
+        )
+
     def test_record_event_updates_state_and_export_replays(self) -> None:
         changed = self.service.record_event(
             self.match_id,

@@ -30,11 +30,13 @@ bulk scenarios.
 
 ## Compatibility boundary
 
-The current profile is Showdown generation 9 in Doubles. It is a deterministic
-proxy, not proof that every Pokémon Champions mechanic is identical. Stock data
-does not contain Champions-only Mega forms or custom Mega items. These are
-listed as assumptions until a versioned authoritative Champions overlay is
-available and tested.
+The base profile is Showdown generation 9 in Doubles, behind the current
+Champions legality gate. A versioned M-B/M-5 overlay supplies Champions Mega
+forms, stones, stats, types and known abilities to the calculator; Mega entry
+weather and terrain are applied by the transition engine. This does not prove
+that every Pokémon Champions callback is identical. Any rare custom effect or
+per-hit divergence without a verified fixture remains a named unsupported
+boundary instead of inheriting an invented value.
 
 ## Failure behavior
 

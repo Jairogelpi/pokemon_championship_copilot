@@ -1,6 +1,6 @@
 [project]
 name = "pokemon-champions-copilot"
-version = "0.7.0"
+version = "0.8.0"
 description = "A Codex-directed battle copilot with deterministic Pokémon mechanics"
 requires-python = ">=3.11"
 dependencies = []

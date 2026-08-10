@@ -107,6 +107,25 @@ class BeliefAndDecisionTests(unittest.TestCase):
             switches = [single.switch_to for single in action.actions if single.kind == "switch"]
             self.assertEqual(len(switches), len(set(switches)))
 
+    def test_mega_evolution_is_a_legal_once_per_turn_action_branch(self) -> None:
+        state = create_match(
+            OPPONENT,
+            ["froslass", "sneasler", "dragonite", "garchomp"],
+            ["froslass", "sneasler"],
+            match_id="mega-action-fixture",
+        )
+        actions = generate_legal_joint_actions(state)
+        self.assertTrue(
+            any(
+                single.actor == "froslass" and single.mega
+                for action in actions
+                for single in action.actions
+            )
+        )
+        self.assertTrue(
+            all(sum(single.mega for single in action.actions) <= 1 for action in actions)
+        )
+
     def test_joint_opponent_responses_cover_both_active_slots(self) -> None:
         state = battle()
         beliefs = BeliefState.from_battle(state)

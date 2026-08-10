@@ -43,6 +43,8 @@ class CopilotHandler(BaseHTTPRequestHandler):
         try:
             if path == "/api/health":
                 self._json(HTTPStatus.OK, self.server.service.health())
+            elif path == "/api/regulation/current":
+                self._json(HTTPStatus.OK, self.server.service.regulation_status())
             elif path == "/api/team":
                 self._json(HTTPStatus.OK, self.server.service.team())
             elif path == "/api/matches":
@@ -79,6 +81,10 @@ class CopilotHandler(BaseHTTPRequestHandler):
                 )
             elif path == "/api/meta/species":
                 self._json(HTTPStatus.OK, self.server.service.meta_lookup(payload))
+            elif path == "/api/regulation/lookup":
+                self._json(HTTPStatus.OK, self.server.service.regulation_lookup(payload))
+            elif path == "/api/regulation/validate":
+                self._json(HTTPStatus.OK, self.server.service.regulation_validate(payload))
             elif path == "/api/calculate/speed":
                 self._json(HTTPStatus.OK, self.server.service.speed(payload))
             elif match := re.fullmatch(r"/api/matches/([a-f0-9]+)/events", path):

@@ -118,11 +118,36 @@ class HTTPTests(unittest.TestCase):
             "/api/knowledge/learnset", {"species": "Garchomp"}
         )
         self.assertEqual(200, status)
-        self.assertGreater(learnset["moveCount"], 60)
+        self.assertGreater(learnset["moveCount"], 50)
+        self.assertEqual("Champions", learnset["generation"])
         current_species = self.server.service.meta.snapshot["pokemon"][0]["name"]
         status, meta = self.post("/api/meta/species", {"species": current_species})
         self.assertEqual(200, status)
         self.assertTrue(meta["found"])
+
+    def test_current_regulation_endpoints_expose_and_enforce_snapshot(self) -> None:
+        status, body, _ = self.get("/api/regulation/current")
+        current = json.loads(body)
+        self.assertEqual(200, status)
+        self.assertEqual("M-B", current["regulation"])
+        self.assertEqual("M-5", current["season"])
+        self.assertTrue(current["active"])
+        status, validation = self.post(
+            "/api/regulation/validate",
+            {
+                "kind": "preview",
+                "species": [
+                    "Charizard",
+                    "Garchomp",
+                    "Kingambit",
+                    "Aerodactyl",
+                    "Sylveon",
+                    "Farigiraf",
+                ],
+            },
+        )
+        self.assertEqual(200, status)
+        self.assertTrue(validation["legal"])
 
 
 if __name__ == "__main__":

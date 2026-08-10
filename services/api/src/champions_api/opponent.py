@@ -143,6 +143,51 @@ def _actions_for_actor(
                     "probability": switch_mass / len(living_bench),
                 }
             )
+    side_has_mega = any(member.mega_evolved for member in state.opponent.roster.values())
+    mega_options: list[dict[str, Any]] = []
+    if not side_has_mega and not actor.mega_evolved:
+        meta_entry = meta.get(actor.name).get("pokemon") or {}
+        candidate_items = list(meta_entry.get("items", []))
+        if not candidate_items:
+            candidate_items = [
+                str(entry["mega_stone"])
+                for entry in meta.regulation.mega_options(actor.name)
+            ]
+        for item in candidate_items:
+            try:
+                resolved = meta.regulation.mega_evolution(actor.name, item=str(item))
+            except ValueError:
+                continue
+            if resolved["mega_stone"] not in {
+                option["mega_stone"] for option in mega_options
+            }:
+                mega_options.append(resolved)
+    if mega_options:
+        mega_probability = max(0.0, min(1.0, float(belief.mega_probability)))
+        branched: list[dict[str, Any]] = []
+        for action in actions:
+            if action["kind"] != "move":
+                branched.append(action)
+                continue
+            normal = dict(action)
+            normal["probability"] = float(action["probability"]) * (1 - mega_probability)
+            branched.append(normal)
+            for option in mega_options:
+                mega = dict(action)
+                mega.update(
+                    {
+                        "mega": True,
+                        "mega_stone": option["mega_stone"],
+                        "mega_form": option["battle_form"],
+                        "probability": (
+                            float(action["probability"])
+                            * mega_probability
+                            / len(mega_options)
+                        ),
+                    }
+                )
+                branched.append(mega)
+        actions = branched
     actions.append(
         {
             "actor": actor_id,
@@ -183,7 +228,8 @@ def _action_label(state: BattleState, action: dict[str, Any]) -> str:
         target = state.player.roster[target_id].name
     else:
         target = "field"
-    return f"{actor}: {action['move']}→{target}"
+    prefix = f"Mega ({action.get('mega_form')}) + " if action.get("mega") else ""
+    return f"{actor}: {prefix}{action['move']}→{target}"
 
 
 def build_response_model(
@@ -217,6 +263,8 @@ def build_response_model(
 
     combinations: list[dict[str, Any]] = []
     for choices in product(*(actor_actions[actor_id] for actor_id in active)):
+        if sum(bool(choice.get("mega")) for choice in choices) > 1:
+            continue
         switch_targets = [choice.get("switch_to") for choice in choices if choice["kind"] == "switch"]
         if len(switch_targets) != len(set(switch_targets)):
             continue

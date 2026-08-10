@@ -32,6 +32,7 @@ def pokemon(
         evs=evs,
         role=role,
         set_verified=verified,
+        can_mega_evolve=bool(item and item.split()[0].endswith("ite")),
     )
 
 

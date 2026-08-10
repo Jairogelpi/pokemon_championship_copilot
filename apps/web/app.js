@@ -48,11 +48,12 @@ function buildPreviewInputs() {
 }
 
 function renderHealth() {
-  const healthy = state.health?.showdown?.available === true;
-  const catalog = state.health?.showdown?.knowledge?.catalog;
+  const healthy = state.health?.showdown?.available === true
+    && state.health?.regulation?.active === true;
+  const regulation = state.health?.regulation;
   $("#health-dot").classList.toggle("ok", healthy);
   $("#health-label").textContent = healthy
-    ? `Showdown ${state.health.showdown.version} · ${catalog?.species || "?"} Pokémon · ${catalog?.moves || "?"} moves`
+    ? `${regulation?.regulation || "Champions"}/${regulation?.season || "current"} · ${regulation?.species || "?"} Pokémon + ${regulation?.mega_forms || "?"} Megas · fail-closed`
     : "Showdown calculator unavailable";
   if (state.health?.openai_configured) {
     const model = state.health?.codex_brain?.model || "OpenAI";

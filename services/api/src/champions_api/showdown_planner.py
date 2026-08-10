@@ -7,11 +7,11 @@ from typing import Any
 from champions_copilot.decision import DamageEstimate
 from champions_copilot.models import BattleState, PokemonState, SideState
 
+from .regulation import CurrentChampionsRegulation
 from .showdown import ShowdownCalculator, ShowdownUnavailable
 
 
 NON_DAMAGE_MOVES = {"Aurora Veil", "Protect", "Tailwind"}
-CHAMPIONS_ONLY_ITEMS = {"Dragoninite", "Froslassite"}
 WEATHER = {
     "sun": "Sun",
     "sunny": "Sun",
@@ -64,7 +64,7 @@ def _pokemon_spec(
 ) -> dict[str, Any]:
     facts = _known(side, pokemon.id)
     item = facts.get("item", pokemon.item)
-    if item in CHAMPIONS_ONLY_ITEMS:
+    if pokemon.can_mega_evolve or pokemon.mega_evolved:
         item = None
     spec: dict[str, Any] = {
         "name": pokemon.name,
@@ -89,6 +89,8 @@ def _pokemon_spec(
         spec["ability"] = resolved_ability
     if tera_type:
         spec["teraType"] = tera_type
+    if pokemon.mechanics_override:
+        spec["overrides"] = dict(pokemon.mechanics_override)
     return spec
 
 
@@ -182,6 +184,7 @@ def _estimate_from_rows(
     rows: list[tuple[BulkScenario, dict[str, Any]]],
     *,
     offense: bool,
+    actor: str | None = None,
 ) -> DamageEstimate:
     category = str(rows[0][1].get("moveCategory", "Physical"))
     relevant = (
@@ -189,7 +192,8 @@ def _estimate_from_rows(
         if offense
         else _relevant_scenarios(rows, category)
     )
-    actor_id, move, target_id = key
+    key_actor, move, target_id = key
+    actor_id = actor or key_actor
     scenario_payloads = tuple(
         {
             "name": scenario.name,
@@ -268,6 +272,7 @@ def calculate_turn_damage(
     calculator: ShowdownCalculator,
     state: BattleState,
     opponent_moves: dict[str, list[str]] | None = None,
+    regulation: CurrentChampionsRegulation | None = None,
 ) -> tuple[
     dict[tuple[str, str, str], DamageEstimate],
     dict[tuple[str, str, str], DamageEstimate],
@@ -275,34 +280,79 @@ def calculate_turn_damage(
 ]:
     requests: list[dict[str, Any]] = []
     metadata: list[tuple[str, str, str, BulkScenario]] = []
+    display_actors: dict[str, str] = {}
+    mega_requests = 0
     for actor_id in state.player.active:
         actor = state.player.roster[actor_id]
         if actor.fainted:
             continue
-        for move in actor.moves:
-            if move in NON_DAMAGE_MOVES:
-                continue
-            for target_id in state.opponent.active:
-                target = state.opponent.roster[target_id]
-                if target.fainted:
+        attacker_variants: list[tuple[str, dict[str, Any], dict[str, str]]] = [
+            (actor_id, _pokemon_spec(state.player, actor), {})
+        ]
+        if regulation is not None and actor.can_mega_evolve and not actor.mega_evolved:
+            resolved = regulation.mega_evolution(actor.name, item=actor.item)
+            mega_spec = _pokemon_spec(state.player, actor)
+            mega_spec["ability"] = resolved["ability"]
+            mega_spec["overrides"] = resolved["mechanics_override"]
+            mega_spec.pop("item", None)
+            ability = str(resolved["ability"])
+            environment: dict[str, str] = {}
+            if ability in {
+                "Drizzle": "Rain",
+                "Drought": "Sun",
+                "Sand Stream": "Sand",
+                "Snow Warning": "Snow",
+            }:
+                environment["weather"] = {
+                    "Drizzle": "Rain",
+                    "Drought": "Sun",
+                    "Sand Stream": "Sand",
+                    "Snow Warning": "Snow",
+                }[ability]
+            if ability in {
+                "Electric Surge": "Electric",
+                "Grassy Surge": "Grassy",
+                "Misty Surge": "Misty",
+                "Psychic Surge": "Psychic",
+            }:
+                environment["terrain"] = {
+                    "Electric Surge": "Electric",
+                    "Grassy Surge": "Grassy",
+                    "Misty Surge": "Misty",
+                    "Psychic Surge": "Psychic",
+                }[ability]
+            key_actor = f"{actor_id}#mega"
+            display_actors[key_actor] = actor_id
+            attacker_variants.append((key_actor, mega_spec, environment))
+        for key_actor, attacker_spec, environment in attacker_variants:
+            for move in actor.moves:
+                if move in NON_DAMAGE_MOVES:
                     continue
-                for scenario in _defender_scenarios(state.opponent, target):
-                    requests.append(
-                        {
-                            "generation": 9,
-                            "scenario": scenario.name,
-                            "attacker": _pokemon_spec(state.player, actor),
-                            "defender": _pokemon_spec(
-                                state.opponent,
-                                target,
-                                evs=scenario.evs,
-                                nature=scenario.nature,
-                            ),
-                            "move": {"name": move},
-                            "field": _field(state, target),
-                        }
-                    )
-                    metadata.append((actor_id, move, target_id, scenario))
+                for target_id in state.opponent.active:
+                    target = state.opponent.roster[target_id]
+                    if target.fainted:
+                        continue
+                    for scenario in _defender_scenarios(state.opponent, target):
+                        field = _field(state, target)
+                        field.update(environment)
+                        requests.append(
+                            {
+                                "generation": 9,
+                                "scenario": scenario.name,
+                                "attacker": attacker_spec,
+                                "defender": _pokemon_spec(
+                                    state.opponent,
+                                    target,
+                                    evs=scenario.evs,
+                                    nature=scenario.nature,
+                                ),
+                                "move": {"name": move},
+                                "field": field,
+                            }
+                        )
+                        metadata.append((key_actor, move, target_id, scenario))
+                        if key_actor.endswith("#mega"):
+                            mega_requests += 1
 
     raw_results = calculator.batch(requests)
     grouped: dict[
@@ -329,10 +379,18 @@ def calculate_turn_damage(
 
     estimates: dict[tuple[str, str, str], DamageEstimate] = {}
     for key, rows in grouped.items():
-        estimates[key] = _estimate_from_rows(key, rows, offense=False)
+        estimates[key] = _estimate_from_rows(
+            key,
+            rows,
+            offense=False,
+            actor=display_actors.get(key[0]),
+        )
 
     threats, threat_errors = calculate_revealed_threats(
-        calculator, state, opponent_moves=opponent_moves
+        calculator,
+        state,
+        opponent_moves=opponent_moves,
+        regulation=regulation,
     )
     errors.extend(threat_errors)
 
@@ -352,7 +410,12 @@ def calculate_turn_damage(
         "modelled_opponent_moves": sum(
             len(moves) for moves in (opponent_moves or {}).values()
         ),
-        "compatibility": "Showdown Gen 9 proxy; Champions-only mechanics are flagged as assumptions",
+        "mega_matchup_requests": mega_requests,
+        "champions_mega_overrides": bool(mega_requests),
+        "compatibility": (
+            "Showdown Gen 9 mechanics with pinned current-Champions Mega stat/type/ability overrides; "
+            "unverified Champions-only effects remain explicit boundaries"
+        ),
     }
     if requests and not estimates:
         raise ShowdownUnavailable(
@@ -366,9 +429,11 @@ def calculate_revealed_threats(
     state: BattleState,
     *,
     opponent_moves: dict[str, list[str]] | None = None,
+    regulation: CurrentChampionsRegulation | None = None,
 ) -> tuple[dict[tuple[str, str, str], DamageEstimate], list[dict[str, str]]]:
     requests: list[dict[str, Any]] = []
     metadata: list[tuple[str, str, str, BulkScenario]] = []
+    display_actors: dict[str, str] = {}
     living_players = [
         pokemon_id
         for pokemon_id in state.player.selected
@@ -376,38 +441,78 @@ def calculate_revealed_threats(
     ]
     for actor_id in state.opponent.active:
         actor = state.opponent.roster[actor_id]
+        attacker_variants: list[tuple[str, dict[str, Any], dict[str, str]]] = [
+            (actor_id, _pokemon_spec(state.opponent, actor), {})
+        ]
+        if (
+            regulation is not None
+            and not actor.mega_evolved
+            and not any(member.mega_evolved for member in state.opponent.roster.values())
+        ):
+            for entry in regulation.mega_options(actor.name):
+                resolved = regulation.mega_evolution(
+                    actor.name, item=str(entry["mega_stone"])
+                )
+                spec = _pokemon_spec(state.opponent, actor)
+                spec["ability"] = resolved["ability"]
+                spec["overrides"] = resolved["mechanics_override"]
+                spec.pop("item", None)
+                ability = str(resolved["ability"])
+                environment: dict[str, str] = {}
+                weather = {
+                    "Drizzle": "Rain",
+                    "Drought": "Sun",
+                    "Sand Stream": "Sand",
+                    "Snow Warning": "Snow",
+                }.get(ability)
+                terrain = {
+                    "Electric Surge": "Electric",
+                    "Grassy Surge": "Grassy",
+                    "Misty Surge": "Misty",
+                    "Psychic Surge": "Psychic",
+                }.get(ability)
+                if weather:
+                    environment["weather"] = weather
+                if terrain:
+                    environment["terrain"] = terrain
+                key_actor = f"{actor_id}#mega:{resolved['battle_form']}"
+                display_actors[key_actor] = actor_id
+                attacker_variants.append((key_actor, spec, environment))
         moves = list(actor.revealed_moves)
         for candidate in (opponent_moves or {}).get(actor_id, []):
             if candidate not in moves:
                 moves.append(candidate)
-        for move in moves:
-            if move in NON_DAMAGE_MOVES:
-                continue
-            facts = _known(state.opponent, actor_id)
-            scenarios = (
-                (BulkScenario("confirmed_set", 1.0, dict(facts["evs"])),)
-                if "evs" in facts
-                else OFFENSE_SCENARIOS
-            )
-            for target_id in living_players:
-                target = state.player.roster[target_id]
-                for scenario in scenarios:
-                    requests.append(
-                        {
-                            "generation": 9,
-                            "scenario": scenario.name,
-                            "attacker": _pokemon_spec(
-                                state.opponent,
-                                actor,
-                                evs=scenario.evs,
-                                nature=scenario.nature,
-                            ),
-                            "defender": _pokemon_spec(state.player, target),
-                            "move": {"name": move},
-                            "field": _opponent_field(state, target),
-                        }
-                    )
-                    metadata.append((actor_id, move, target_id, scenario))
+        for key_actor, base_spec, environment in attacker_variants:
+            for move in moves:
+                if move in NON_DAMAGE_MOVES:
+                    continue
+                facts = _known(state.opponent, actor_id)
+                scenarios = (
+                    (BulkScenario("confirmed_set", 1.0, dict(facts["evs"])),)
+                    if "evs" in facts
+                    else OFFENSE_SCENARIOS
+                )
+                for target_id in living_players:
+                    target = state.player.roster[target_id]
+                    for scenario in scenarios:
+                        attacker = dict(base_spec)
+                        attacker["evs"] = scenario.evs
+                        attacker["nature"] = scenario.nature or str(
+                            base_spec.get("nature", "Serious")
+                        )
+                        field = _opponent_field(state, target)
+                        field.update(environment)
+                        requests.append(
+                            {
+                                "generation": 9,
+                                "scenario": scenario.name,
+                                "attacker": attacker,
+                                "defender": _pokemon_spec(state.player, target),
+                                "move": {"name": move},
+                                "field": field,
+                            }
+                        )
+                        metadata.append((key_actor, move, target_id, scenario))
     if not requests:
         return {}, []
     responses = calculator.batch(requests)
@@ -431,7 +536,15 @@ def calculate_revealed_threats(
                 }
             )
     return (
-        {key: _estimate_from_rows(key, rows, offense=True) for key, rows in grouped.items()},
+        {
+            key: _estimate_from_rows(
+                key,
+                rows,
+                offense=True,
+                actor=display_actors.get(key[0]),
+            )
+            for key, rows in grouped.items()
+        },
         errors,
     )
 

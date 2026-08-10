@@ -15,6 +15,7 @@ from .meta import MetaRepository
 from .multiturn import MultiTurnConfig, MultiTurnPlanner
 from .opponent import build_response_model
 from .parser import interpret_locally
+from .regulation import CurrentChampionsRegulation
 from .showdown import ShowdownCalculationError, ShowdownCalculator, ShowdownUnavailable
 from .showdown_planner import calculate_turn_damage
 from .store import InMemoryStore, MatchRecord
@@ -32,7 +33,8 @@ class AppService:
         self.openai = OpenAIEventInterpreter()
         self.brain = brain or CodexBattleBrain()
         self.calculator = calculator or ShowdownCalculator()
-        self.meta = MetaRepository(self.calculator.repo_root)
+        self.regulation = CurrentChampionsRegulation(self.calculator.repo_root)
+        self.meta = MetaRepository(self.calculator.repo_root, self.regulation)
         self.multiturn = multiturn or MultiTurnPlanner(
             self.calculator,
             self.meta,
@@ -44,9 +46,14 @@ class AppService:
 
     def health(self) -> dict[str, Any]:
         calculator = self.calculator.health()
+        regulation = self.regulation.status()
         return {
-            "status": "ok" if calculator.get("available") else "degraded",
-            "policy_version": "codex-strategist-0.7",
+            "status": (
+                "ok"
+                if calculator.get("available") and regulation["active"]
+                else "degraded"
+            ),
+            "policy_version": "codex-strategist-0.8",
             "validation_status": (
                 "CODEX_STRATEGIST_AVAILABLE"
                 if self.brain.configured
@@ -57,17 +64,22 @@ class AppService:
             "multi_turn": self.multiturn.status(),
             "showdown": calculator,
             "meta": self.meta.status(),
+            "regulation": regulation,
         }
 
     def team(self) -> dict[str, Any]:
+        legality = self.regulation.validate_team(PLAYER_TEAM)
         return {
             "id": "GMKXPHAS7D",
             "name": "washy Ranked Season M-4 replica",
             "members": [member.to_dict() for member in PLAYER_TEAM],
+            "current_format": self.regulation.status(),
+            "legality": legality.to_dict(),
             "warning": (
                 "The displayed EVs are offensive archetype assumptions. Garchomp's fourth move and "
-                "Kingambit's set still require confirmation; Champions-only Mega data is not present "
-                "in stock Showdown Gen 9. Unverified values are exposed in every calculation."
+                "Kingambit's set still require confirmation. Champions-only Mega forms are pinned in "
+                "the current format dataset and their stats, types, abilities, and entry weather/terrain "
+                "are applied as calculator overrides. Unpublished custom-effect constants fail closed."
             ),
         }
 
@@ -75,6 +87,10 @@ class AppService:
         opponent_team = [str(name).strip() for name in payload.get("opponent_team", [])]
         if any(not name for name in opponent_team):
             raise ValueError("opponent team names cannot be empty")
+        self.regulation.assert_preview(opponent_team)
+        player_legality = self.regulation.validate_team(PLAYER_TEAM)
+        if not player_legality.legal:
+            raise ValueError("configured player team is illegal: " + "; ".join(player_legality.errors))
         preview = recommend_team_preview(opponent_team)
         selected = list(payload.get("selected") or preview["selected"])
         lead = list(payload.get("lead") or preview["lead"])
@@ -114,6 +130,8 @@ class AppService:
     def record_event(self, match_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         record = self.store.get(match_id)
         event = BattleEvent.create(str(payload.get("type", "")), dict(payload.get("payload", {})))
+        event = self._enrich_event(record.state, event)
+        self._validate_event_legality(record.state, event)
         next_state = apply_event(record.state, event)
         record.events.append(event)
         record.state = next_state
@@ -132,6 +150,16 @@ class AppService:
         replacement = payload.get("replacement")
         if replacement is not None and not isinstance(replacement, dict):
             raise ValueError("replacement must be an event object or null")
+        if replacement is not None:
+            replacement_event = BattleEvent.create(
+                str(replacement.get("type", "")),
+                dict(replacement.get("payload", {})),
+            )
+            replacement_event = self._enrich_event(record.initial_state, replacement_event)
+            replacement = {
+                "type": replacement_event.type,
+                "payload": replacement_event.payload,
+            }
         correction = BattleEvent.create(
             "correction",
             {"target_event_id": target_event_id, "replacement": replacement},
@@ -201,11 +229,66 @@ class AppService:
         state = replay(record.initial_state, [])
         beliefs = BeliefState.from_battle(state)
         for event in self._effective_events(record.events):
+            event = self._enrich_event(state, event)
+            self._validate_event_legality(state, event)
             state = apply_event(state, event)
             beliefs.observe(state, event)
         state.revision = len(record.events)
         record.state = state
         record.beliefs = beliefs
+
+    def _validate_event_legality(self, state: Any, event: BattleEvent) -> None:
+        self.regulation.require_active()
+        payload = event.payload
+        if event.type == "move_used":
+            side = state.side(str(payload.get("side", "")))
+            pokemon_id = str(payload.get("pokemon", ""))
+            pokemon = side.roster.get(pokemon_id)
+            if pokemon is not None:
+                self.regulation.assert_move(pokemon.name, str(payload.get("move", "")))
+        elif event.type == "fact_revealed" and payload.get("key") == "item":
+            side = state.side(str(payload.get("side", "")))
+            pokemon_id = str(payload.get("pokemon", ""))
+            pokemon = side.roster.get(pokemon_id)
+            if pokemon is not None:
+                self.regulation.assert_item_for_species(
+                    pokemon.name,
+                    str(payload["value"]) if payload.get("value") else None,
+                )
+        elif event.type == "mega_evolved":
+            side = state.side(str(payload.get("side", "")))
+            pokemon_id = str(payload.get("pokemon", ""))
+            pokemon = side.roster.get(pokemon_id)
+            if pokemon is not None:
+                self.regulation.mega_evolution(
+                    pokemon.name,
+                    item=str(payload.get("mega_stone") or pokemon.item or "") or None,
+                    form=str(payload.get("battle_form") or "") or None,
+                )
+
+    def _enrich_event(self, state: Any, event: BattleEvent) -> BattleEvent:
+        if event.type != "mega_evolved":
+            return event
+        payload = dict(event.payload)
+        side = state.side(str(payload.get("side", "")))
+        pokemon_id = str(payload.get("pokemon", ""))
+        pokemon = side.roster.get(pokemon_id)
+        if pokemon is None:
+            return event
+        facts = side.known_facts.get(pokemon_id, {})
+        item = payload.get("mega_stone") or facts.get("item") or pokemon.item
+        resolved = self.regulation.mega_evolution(
+            pokemon.name,
+            item=str(item) if item else None,
+            form=str(payload["battle_form"]) if payload.get("battle_form") else None,
+        )
+        payload.update(resolved)
+        return BattleEvent(
+            id=event.id,
+            type=event.type,
+            payload=payload,
+            created_at=event.created_at,
+        )
 
     def damage(self, payload: dict[str, Any]) -> dict[str, Any]:
         return calculate_damage_range(
@@ -226,27 +309,58 @@ class AppService:
         return {"results": self.calculator.batch(requests)}
 
     def knowledge_lookup(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.calculator.lookup(
-            str(payload.get("kind", "")),
-            str(payload.get("name", "")),
+        kind = str(payload.get("kind", ""))
+        name = str(payload.get("name", ""))
+        legality = None
+        if kind.lower() in {"species", "pokemon", "move", "item"}:
+            legality = self.regulation.lookup(kind, name)
+            if not legality["legal"]:
+                raise ValueError(f"entity is outside current Champions Doubles: {kind} {name}")
+        result = self.calculator.lookup(
+            kind,
+            name,
             generation=int(payload.get("generation", 9)),
         )
+        result["champions_legality"] = legality
+        return result
 
     def knowledge_learnset(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.calculator.learnset(
-            str(payload.get("species", "")),
-            generation=int(payload.get("generation", 9)),
-            restriction=(
-                str(payload["restriction"]) if payload.get("restriction") else None
-            ),
-        )
+        result = self.regulation.learnset(str(payload.get("species", "")))
+        return {
+            "source": "Pokemon Champions current legality snapshot",
+            "generation": "Champions",
+            "species": result["species"],
+            "moveCount": result["move_count"],
+            "moves": [{"name": move} for move in result["moves"]],
+            "regulation": result["regulation"],
+            "season": result["season"],
+            "snapshot_id": result["snapshot_id"],
+        }
 
     def knowledge_type_matchup(self, payload: dict[str, Any]) -> dict[str, Any]:
+        defender = str(payload.get("defender", ""))
+        if not self.regulation.is_species_legal(defender):
+            raise ValueError(f"defender is outside current Champions Doubles: {defender}")
         return self.calculator.type_matchup(
             str(payload.get("attack_type", "")),
-            str(payload.get("defender", "")),
+            defender,
             generation=int(payload.get("generation", 9)),
         )
+
+    def regulation_status(self) -> dict[str, Any]:
+        return self.regulation.status()
+
+    def regulation_lookup(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.regulation.lookup(
+            str(payload.get("kind", "")), str(payload.get("name", ""))
+        )
+
+    def regulation_validate(self, payload: dict[str, Any]) -> dict[str, Any]:
+        species = payload.get("species")
+        if not isinstance(species, list):
+            raise ValueError("species must be an array")
+        self.regulation.require_active()
+        return self.regulation.validate_preview(str(value) for value in species).to_dict()
 
     def meta_lookup(self, payload: dict[str, Any]) -> dict[str, Any]:
         species = str(payload.get("species", "")).strip()
@@ -266,6 +380,7 @@ class AppService:
         }
 
     def _recommend(self, record: MatchRecord) -> dict[str, Any]:
+        self.regulation.require_active()
         if (
             record.recommendation_revision == record.state.revision
             and record.cached_recommendation is not None
@@ -279,6 +394,7 @@ class AppService:
                 self.calculator,
                 record.state,
                 opponent_moves=response_model["damage_moves"],
+                regulation=self.regulation,
             )
             calculator_status["knowledge"] = self.calculator.health().get("knowledge")
             calculator_status["meta"] = self.meta.status()
@@ -318,6 +434,7 @@ class AppService:
             knowledge_tools=BattleKnowledgeTools(
                 calculator=self.calculator,
                 meta=self.meta,
+                regulation=self.regulation,
                 state=record.state,
                 beliefs=record.beliefs,
                 recommendation=baseline,

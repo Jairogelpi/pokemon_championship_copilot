@@ -151,6 +151,13 @@ def apply_event(state: BattleState, event: BattleEvent) -> BattleState:
         if any(member.mega_evolved for member in side.roster.values() if member.id != pokemon.id):
             raise EventValidationError("this side has already Mega Evolved another Pokémon")
         pokemon.mega_evolved = True
+        pokemon.can_mega_evolve = False
+        if payload.get("battle_form"):
+            pokemon.battle_form = str(payload["battle_form"])
+        if isinstance(payload.get("mechanics_override"), dict):
+            pokemon.mechanics_override = dict(payload["mechanics_override"])
+        if payload.get("ability"):
+            pokemon.ability = str(payload["ability"])
 
     elif event.type == "field_set":
         field_name = required(payload, "field")

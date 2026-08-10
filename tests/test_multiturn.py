@@ -19,6 +19,7 @@ from champions_api.multiturn import (  # noqa: E402
     VerifiedTurnResolver,
 )
 from champions_api.opponent import build_response_model  # noqa: E402
+from champions_api.regulation import CurrentChampionsRegulation  # noqa: E402
 from champions_api.showdown import ShowdownCalculator  # noqa: E402
 from champions_api.showdown_planner import (  # noqa: E402
     calculate_canonical_damage,
@@ -110,6 +111,119 @@ class MultiTurnTransitionTests(unittest.TestCase):
                 for outcome in continuations
             )
         )
+
+    def test_mega_branch_applies_current_form_stats_ability_and_weather(self) -> None:
+        state = create_match(
+            OPPONENT,
+            ["froslass", "sneasler", "dragonite", "garchomp"],
+            ["froslass", "sneasler"],
+            match_id="verified-mega-fixture",
+        )
+        charizard = state.opponent.active[0]
+        action = JointAction(
+            (
+                SingleAction("froslass", "move", "Shadow Ball", charizard, mega=True),
+                SingleAction("sneasler", "move", "Protect", "sneasler"),
+            )
+        )
+        response = {"label": "no response", "probability": 1.0, "actions": []}
+        resolver = VerifiedTurnResolver(
+            self.calculator,
+            MultiTurnConfig(samples_per_response=1),
+            CurrentChampionsRegulation(ROOT),
+        )
+        outcome = resolver.resolve_samples(
+            PlanningState.initial(state), action, response
+        )[0].next_state
+        froslass = outcome.battle.player.roster["froslass"]
+        self.assertTrue(froslass.mega_evolved)
+        self.assertEqual("Mega Froslass", froslass.battle_form)
+        self.assertEqual("Snow Warning", froslass.ability)
+        self.assertEqual(140, froslass.mechanics_override["baseStats"]["spa"])
+        self.assertEqual("snow", outcome.battle.field.weather)
+
+    def test_current_response_model_branches_and_resolves_opponent_mega(self) -> None:
+        state, beliefs = self.position()
+        model = build_response_model(self.calculator, self.meta, state, beliefs)
+        charizard = state.opponent.active[0]
+        garchomp = state.opponent.active[1]
+        response = next(
+            row
+            for row in model["responses"]
+            if any(
+                reply.get("actor") == charizard
+                and reply.get("mega_form") == "Mega Charizard Y"
+                and reply.get("move") == "Protect"
+                for reply in row.get("actions", [])
+            )
+            and any(
+                reply.get("actor") == garchomp and reply.get("move") == "Protect"
+                for reply in row.get("actions", [])
+            )
+        )
+        left, right = state.player.active
+        action = JointAction(
+            (
+                SingleAction(left, "move", "Protect", left),
+                SingleAction(right, "move", "Protect", right),
+            )
+        )
+        resolver = VerifiedTurnResolver(
+            self.calculator,
+            MultiTurnConfig(samples_per_response=1),
+            self.meta.regulation,
+        )
+        outcome = resolver.resolve_samples(
+            PlanningState.initial(state), action, response
+        )[0].next_state
+        evolved = outcome.battle.opponent.roster[charizard]
+        self.assertEqual("Mega Charizard Y", evolved.battle_form)
+        self.assertEqual("Drought", evolved.ability)
+        self.assertEqual("sun", outcome.battle.field.weather)
+        self.assertEqual(159, evolved.mechanics_override["baseStats"]["spa"])
+
+    def test_equal_power_multi_hit_moves_roll_critical_checks_per_hit(self) -> None:
+        preview = recommend_team_preview(OPPONENT)
+        state = create_match(
+            OPPONENT,
+            preview["selected"],
+            preview["lead"],
+            opponent_lead=["aerodactyl", "charizard"],
+            match_id="per-hit-critical-fixture",
+        )
+        left, right = state.player.active
+        incoming = state.player.bench[0]
+        action = JointAction(
+            (
+                SingleAction(left, "switch", switch_to=incoming),
+                SingleAction(right, "move", "Protect", right),
+            )
+        )
+        response = {
+            "label": "Dual Wingbeat plus Protect",
+            "probability": 1.0,
+            "actions": [
+                {
+                    "actor": "aerodactyl",
+                    "kind": "move",
+                    "move": "Dual Wingbeat",
+                    "target": left,
+                },
+                {
+                    "actor": "charizard",
+                    "kind": "move",
+                    "move": "Protect",
+                    "target": "charizard",
+                },
+            ],
+        }
+        resolver = VerifiedTurnResolver(
+            self.calculator,
+            MultiTurnConfig(samples_per_response=1),
+            self.meta.regulation,
+        )
+        resolver.resolve_samples(PlanningState.initial(state), action, response)
+        self.assertEqual(2, resolver.telemetry["independent_per_hit_critical_checks"])
 
     def test_focus_sash_survival_and_spread_protect_are_resolved(self) -> None:
         state, _ = self.position()

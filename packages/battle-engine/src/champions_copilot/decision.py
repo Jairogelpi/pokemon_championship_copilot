@@ -115,7 +115,7 @@ class Recommendation:
     response_model: dict[str, Any]
     candidate_catalog: tuple[RankedAction, ...] = ()
     multi_turn: dict[str, Any] = field(default_factory=dict)
-    policy_version: str = "adversarial-search-0.7"
+    policy_version: str = "adversarial-search-0.8"
     validation_status: str = "ADVERSARIAL_SHOWDOWN_MODEL"
 
     def to_dict(self) -> dict[str, Any]:
@@ -198,10 +198,11 @@ def action_damage(
         if action.target == "opponents"
         else [action.target]
     )
+    key_actor = f"{action.actor}#mega" if action.mega else action.actor
     return [
-        damage_estimates[(action.actor, action.move, str(target))]
+        damage_estimates[(key_actor, action.move, str(target))]
         for target in targets
-        if (action.actor, action.move, str(target)) in damage_estimates
+        if (key_actor, action.move, str(target)) in damage_estimates
     ]
 
 
@@ -488,8 +489,14 @@ def _response_threats(
             if original_target not in occupants or original_target in protected:
                 continue
             actual_target = occupants[original_target]
+            reply_actor = str(reply.get("actor"))
+            key_actor = (
+                f"{reply_actor}#mega:{reply.get('mega_form')}"
+                if reply.get("mega")
+                else reply_actor
+            )
             estimate = incoming_threats.get(
-                (str(reply.get("actor")), str(reply.get("move")), str(actual_target))
+                (key_actor, str(reply.get("move")), str(actual_target))
             )
             if estimate is not None:
                 threats.append(estimate)
@@ -784,7 +791,7 @@ def recommend_actions(
         "Opponent sets are incomplete and retain an 'other' probability bucket.",
         "Opponent bulk is evaluated as explicit no-bulk, HP-invested, and maximum relevant-bulk scenarios.",
         "This policy has not passed the frozen Master 2000 benchmark and must not be represented as proven at that level.",
-        "Stock Showdown Gen 9 data does not yet model Champions-only Mega stats or custom items.",
+        "Current Champions Mega stats, types, and known abilities are injected as pinned overrides; unknown custom-effect details fail closed.",
     ]
     if has_showdown:
         assumptions.insert(

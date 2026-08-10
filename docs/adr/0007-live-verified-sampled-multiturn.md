@@ -51,9 +51,12 @@ The adapter resolves a declared compatibility subset:
   field-duration decrement.
 
 The residual-other response, rare move-specific callbacks, unimplemented
-volatiles, independent per-hit critical events, and undeclared Champions
-divergences terminate the branch as an explicit uncertainty state with a risk
-penalty. Uncertainty reasons are counted individually in transition telemetry.
+volatiles, and undeclared Champions divergences terminate the branch as an
+explicit uncertainty state with a risk penalty. Release 0.8 adds independent
+critical checks for equal-power multi-hit moves; Beat Up, Dragon Darts,
+Population Bomb, Triple Axel, and Triple Kick still fail closed at their
+specialized per-hit callback boundary. Uncertainty reasons are counted
+individually in transition telemetry.
 Species missing from the native Gen 9 Pokédex use their latest official species
 and learnset record under Gen 9 calculation mechanics, with the source
 generation returned explicitly.
