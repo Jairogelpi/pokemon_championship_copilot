@@ -3305,7 +3305,7 @@ class MultiTurnPlanner:
                 recommendation,
                 primary=primary,
                 alternatives=tuple(exact_ranked[1:4]),
-                candidate_catalog=tuple(exact_ranked[:12]),
+                candidate_catalog=(primary,),
                 rationale=(
                     "The current closed Champions endgame was solved to terminal states "
                     "against every legal opposing reply. "

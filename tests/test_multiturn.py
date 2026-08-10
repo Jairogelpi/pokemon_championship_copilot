@@ -213,6 +213,7 @@ class MultiTurnTransitionTests(unittest.TestCase):
         self.assertEqual("solved", solved.multi_turn["status"])
         self.assertEqual(1.0, solved.multi_turn["best"]["win_probability"])
         self.assertIn("Close Combat", solved.primary.label)
+        self.assertEqual((solved.primary,), solved.candidate_catalog)
 
     def test_mega_branch_applies_current_form_stats_ability_and_weather(self) -> None:
         state = create_match(

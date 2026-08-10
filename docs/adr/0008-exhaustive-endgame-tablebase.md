@@ -39,6 +39,8 @@ partially resolved result from being presented as an exhaustive endgame.
 
 Eligible output carries `EXHAUSTIVE_CURRENT_CHAMPIONS_ENDGAME`, terminal
 win/draw/loss probabilities, the adversarial reply, principal line, exact branch
-telemetry, and `exhaustive_claim: true`. Every other position reports why the
+telemetry, and `exhaustive_claim: true`. The terminal optimum is the only action
+left in Codex's selectable candidate envelope; inferior exact alternatives stay
+visible for audit but cannot override the tablebase. Every other position reports why the
 tablebase was ineligible or unavailable and retains the sampled planner's
 non-exhaustive label.
