@@ -153,5 +153,14 @@ class CopilotHandler(BaseHTTPRequestHandler):
         self._json(status, {"error": type(exc).__name__, "message": str(exc)})
 
 
-def create_server(repo_root: Path, host: str, port: int) -> CopilotHTTPServer:
-    return CopilotHTTPServer((host, port), repo_root=repo_root, service=AppService())
+def create_server(
+    repo_root: Path,
+    host: str,
+    port: int,
+    service: AppService | None = None,
+) -> CopilotHTTPServer:
+    return CopilotHTTPServer(
+        (host, port),
+        repo_root=repo_root,
+        service=service or AppService(),
+    )

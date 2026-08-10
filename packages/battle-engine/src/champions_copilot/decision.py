@@ -113,6 +113,7 @@ class Recommendation:
     assumptions: tuple[str, ...]
     calculator: dict[str, Any]
     response_model: dict[str, Any]
+    candidate_catalog: tuple[RankedAction, ...] = ()
     policy_version: str = "adversarial-search-0.3"
     validation_status: str = "ADVERSARIAL_SHOWDOWN_MODEL"
 
@@ -125,6 +126,18 @@ class Recommendation:
             "assumptions": list(self.assumptions),
             "calculator": self.calculator,
             "response_model": self.response_model,
+            "candidate_catalog": [
+                {
+                    "id": f"candidate-{rank:02d}",
+                    "rank": rank,
+                    "label": candidate.label,
+                    "action": candidate.action.to_dict(),
+                    "score": candidate.score.to_dict(),
+                    "covers": list(candidate.covers),
+                    "principal_lines": list(candidate.principal_lines),
+                }
+                for rank, candidate in enumerate(self.candidate_catalog, start=1)
+            ],
             "policy_version": self.policy_version,
             "validation_status": self.validation_status,
         }
@@ -787,6 +800,7 @@ def recommend_actions(
         risk=risk,
         assumptions=tuple(assumptions),
         calculator=status,
+        candidate_catalog=tuple(ranked[:8]),
         response_model={
             "scenarios_evaluated": len(concrete_responses or response_distribution),
             "concrete": bool(concrete_responses),

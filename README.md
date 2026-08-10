@@ -1,7 +1,8 @@
 # Pokémon Champions Battle Copilot
 
 An unofficial, stateful battle assistant for Pokémon Champions doubles. Release
-0.3 connects every live recommendation to the pinned upstream
+0.4 adds Codex as the final strategic selector over evidence produced by the
+pinned upstream
 [`@smogon/calc`](https://github.com/smogon/damage-calc) engine used by the
 Pokémon Showdown damage calculator.
 
@@ -12,9 +13,9 @@ mechanics, legality, damage, or speed.
 ## North-star goal
 
 Build a decision system whose play quality can be demonstrated at the level of
-a 2,000-point Master player for its supported team and regulation. Release 0.3
-is an adversarial one-turn search model; it is not yet evidence that this goal
-has been reached.
+a 2,000-point Master player for its supported team and regulation. Release 0.4
+combines an adversarial one-turn evidence model with Codex strategic selection;
+it is not yet evidence that this goal has been reached.
 
 This is not a promise to predict every move. Pokémon contains hidden
 information, simultaneous choices, novel sets, and randomness. The system must
@@ -60,13 +61,16 @@ The deterministic engine owns:
 - legal actions, targeting, priority, speed order, and damage ranges;
 - the append-only battle event log and state reconstruction.
 
-The AI layer is limited to:
+The AI layer may:
 
-- interpreting text, voice, or screenshots as proposed structured events;
-- modelling likely opponent intent and incomplete information;
-- explaining ranked recommendations.
+- interpret text, voice, or screenshots as proposed structured events;
+- model likely opponent intent and incomplete information;
+- select among the deterministic engine's verified legal-action candidates;
+- explain ranked recommendations.
 
 Every AI-proposed event must be validated before it can mutate battle state.
+Every AI-selected action is resolved by candidate ID against an immutable legal
+catalog; the model cannot inject a move, target, damage value, or future state.
 
 The Master Decision Engine is divided into five independently testable layers:
 
@@ -109,21 +113,28 @@ docker build -t champions-copilot .
 docker run --rm -p 8765:8765 champions-copilot
 ```
 
-### Optional OpenAI interpretation
+### Codex strategic brain
 
-The application works without an API key using its conservative local text
-parser. To enable structured event proposals through the Responses API:
+The application works without an API key and falls back to its deterministic
+policy. To make Codex the final strategic selector and enable structured event
+proposals through the Responses API:
 
 ```bash
 export OPENAI_API_KEY="..."
-export OPENAI_MODEL="gpt-5.6"
+export OPENAI_MODEL="gpt-5.6-sol"
+export OPENAI_BATTLE_MODEL="gpt-5.6-sol"
+export OPENAI_REASONING_EFFORT="high"
 make run
 ```
 
-OpenAI is an interpretation boundary only. A proposal always requires explicit
-confirmation in the UI before the deterministic engine applies it.
+Codex receives canonical state, beliefs, recent events, eight verified player
+candidates, calculator evidence, response coverage, and principal counter-lines.
+It returns a schema-constrained candidate ID, opponent-plan hypotheses, win
+condition, failure mode, risk, and explanation. Invalid output, refusal,
+timeout, or API failure falls back to the deterministic anchor. Event proposals
+still require explicit confirmation before the engine applies them.
 
-## Implemented in adversarial search model 0.3
+## Implemented in Codex strategist 0.4
 
 - Complete in-memory match lifecycle and six-versus-six team preview.
 - Bring-four and lead baseline for `GMKXPHAS7D`.
@@ -176,6 +187,13 @@ confirmation in the UI before the deterministic engine applies it.
   incoming damage, KO risk, utility, and speed-order evidence.
 - Battle console with preview, live state, recommendations, alternatives,
   belief state, fast input, interpretation proposals, log, undo, and export.
+- Codex strategic selection through the Responses API using strict Structured
+  Outputs and a dynamic enum of verified candidate IDs.
+- Fail-closed Codex boundary: no API key, refusal, timeout, malformed output,
+  unknown action ID, or invalid probability mass preserves the deterministic
+  recommendation.
+- Visible Codex decision evidence: selected candidate, confidence, win
+  condition, opponent hypotheses, main failure mode, and deterministic anchor.
 - Real HTTP integration tests and GitHub Actions CI.
 
 This is a functional baseline, not a validated Master 2000 policy. See
@@ -192,11 +210,14 @@ See:
 - [ADR-0002: belief-state planning](docs/adr/0002-belief-state-planning.md)
 - [ADR-0003: official Showdown calculator boundary](docs/adr/0003-showdown-calculator-boundary.md)
 - [ADR-0004: verified multi-ply transition boundary](docs/adr/0004-multi-ply-transition-boundary.md)
+- [ADR-0005: Codex strategic selector boundary](docs/adr/0005-codex-strategic-selector.md)
 
 ## Status
 
-Adversarial search model 0.3 is runnable and tested. Its damage values are exact
-under each displayed Showdown Gen 9 scenario. Pokémon Champions is not a
+Codex strategist 0.4 is runnable and tested. When an API key is configured,
+Codex owns the final strategic choice inside the verified candidate envelope;
+otherwise the same endpoint degrades to the deterministic anchor. Damage values
+are exact under each displayed Showdown Gen 9 scenario. Pokémon Champions is not a
 one-to-one copy of Gen 9: Champions-only Mega stats, custom items, regulation
 legality, and any divergent mechanics still need an authoritative dataset.
 Those gaps are surfaced as assumptions and are never silently treated as exact.

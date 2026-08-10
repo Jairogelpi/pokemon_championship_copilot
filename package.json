@@ -1,8 +1,8 @@
 {
   "name": "pokemon-champions-copilot",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Stateful Pokémon Champions doubles copilot with Showdown mechanics data and adversarial search",
+  "description": "Codex-directed Pokémon Champions doubles copilot with verified Showdown evidence",
   "type": "module",
   "engines": {
     "node": ">=20"

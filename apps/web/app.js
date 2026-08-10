@@ -55,7 +55,10 @@ function renderHealth() {
     ? `Showdown ${state.health.showdown.version} · ${catalog?.species || "?"} Pokémon · ${catalog?.moves || "?"} moves`
     : "Showdown calculator unavailable";
   if (state.health?.openai_configured) {
-    $("#interpreter-source")?.replaceChildren(document.createTextNode("OPENAI + FALLBACK"));
+    const model = state.health?.codex_brain?.model || "OpenAI";
+    $("#interpreter-source")?.replaceChildren(
+      document.createTextNode(`CODEX BRAIN · ${model}`),
+    );
   }
 }
 
@@ -172,9 +175,28 @@ function renderRecommendation() {
         </div>`,
     )
     .join("");
+  const brain = recommendation.brain || {};
+  const brainStatus = brain.status === "ok"
+    ? `Codex selected ${brain.selected_candidate_id} · ${(brain.confidence * 100).toFixed(0)}% confidence`
+    : `Deterministic fallback · ${brain.reason || "Codex unavailable"}`;
+  const opponentPlan = (brain.opponent_plan || [])
+    .map(
+      (line) => `
+        <div>
+          <strong>${escapeHtml(line.hypothesis)}</strong>
+          <span>${(line.probability * 100).toFixed(0)}% · ${escapeHtml(line.selected_counter)}</span>
+        </div>`,
+    )
+    .join("");
   $("#primary-recommendation").innerHTML = `
     <h2>${escapeHtml(primary.label)}</h2>
     <p>${escapeHtml(recommendation.rationale)}</p>
+    <div class="brain-panel ${brain.status === "ok" ? "active" : "fallback"}">
+      <div><span>Strategic engine</span><strong>${escapeHtml(brainStatus)}</strong></div>
+      ${brain.win_condition ? `<p><b>Win condition:</b> ${escapeHtml(brain.win_condition)}</p>` : ""}
+      ${brain.main_failure_mode ? `<p><b>Main failure mode:</b> ${escapeHtml(brain.main_failure_mode)}</p>` : ""}
+      ${opponentPlan ? `<details><summary>Codex opponent model</summary>${opponentPlan}</details>` : ""}
+    </div>
     <div class="score-row">
       <div><span>Expected damage</span><strong>${primary.score.expected_damage_percent.toFixed(1)}%</strong></div>
       <div><span>Combined KO</span><strong>${(primary.score.knockout_probability * 100).toFixed(0)}%</strong></div>

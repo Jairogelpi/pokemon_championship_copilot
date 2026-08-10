@@ -51,3 +51,16 @@ before stopping the process. Durable storage is a later roadmap item.
 configured and requests a JSON-schema-constrained event proposal. Network,
 authentication, schema, or model failure falls back to the local parser. No
 failure can mutate battle state.
+
+`codex_brain.py` makes Codex the final strategic selector. The deterministic
+engine first produces an ordered catalog of eight legal paired actions with
+scores, calculator evidence, response coverage, and principal counter-lines.
+Codex must return one of those candidate IDs through a strict dynamic JSON
+schema. The service then resolves the ID back to the original engine object;
+model-generated moves, targets, damage, and states are structurally impossible.
+
+Requests use `store: false` and a hashed, privacy-preserving match identifier.
+The default is `gpt-5.6-sol` with `high` reasoning. Configure it with
+`OPENAI_BATTLE_MODEL`, `OPENAI_REASONING_EFFORT`, and
+`OPENAI_TIMEOUT_SECONDS`. Any API, refusal, parsing, candidate, or probability
+validation failure preserves the deterministic anchor.

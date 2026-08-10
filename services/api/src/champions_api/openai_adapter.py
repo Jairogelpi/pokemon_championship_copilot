@@ -90,7 +90,7 @@ EVENT_SCHEMA: dict[str, Any] = {
 class OpenAIEventInterpreter:
     def __init__(self) -> None:
         self.api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-        self.model = os.environ.get("OPENAI_MODEL", "gpt-5.6").strip()
+        self.model = os.environ.get("OPENAI_MODEL", "gpt-5.6-sol").strip()
 
     @property
     def configured(self) -> bool:
@@ -121,6 +121,7 @@ class OpenAIEventInterpreter:
                     "schema": EVENT_SCHEMA,
                 }
             },
+            "store": False,
         }
         request = Request(
             "https://api.openai.com/v1/responses",

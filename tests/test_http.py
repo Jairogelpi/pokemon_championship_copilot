@@ -12,13 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "packages" / "battle-engine" / "src"))
 sys.path.insert(0, str(ROOT / "services" / "api" / "src"))
 
+from champions_api.codex_brain import CodexBattleBrain  # noqa: E402
 from champions_api.server import create_server  # noqa: E402
+from champions_api.service import AppService  # noqa: E402
 
 
 class HTTPTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.server = create_server(ROOT, "127.0.0.1", 0)
+        service = AppService(brain=CodexBattleBrain(api_key=""))
+        cls.server = create_server(ROOT, "127.0.0.1", 0, service=service)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.base = f"http://127.0.0.1:{cls.server.server_port}"

@@ -100,6 +100,19 @@ The explanation is generated from the recorded search result. It must state:
 The language model may compress this evidence but may not invent a line that
 the search did not evaluate.
 
+### 2.6 Codex strategic selector
+
+When configured, Codex owns the final choice inside the deterministic engine's
+verified candidate envelope. It receives canonical state, belief state, recent
+events, decomposed candidate scores, response coverage, and principal lines.
+It returns only catalog IDs plus a structured opponent plan, current win
+condition, failure mode, confidence, risk, and explanation.
+
+The candidate enum is generated per position. The service resolves the chosen
+ID back to an engine-owned action, so Codex cannot introduce a move, target,
+damage value, or state transition. Invalid output preserves the deterministic
+anchor and records the fallback reason.
+
 ## 3. Decision policy
 
 The engine is risk-aware, not prediction-only. A candidate that wins against

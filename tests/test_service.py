@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "packages" / "battle-engine" / "src"))
 sys.path.insert(0, str(ROOT / "services" / "api" / "src"))
 
+from champions_api.codex_brain import CodexBattleBrain  # noqa: E402
 from champions_api.service import AppService  # noqa: E402
 
 
@@ -18,7 +19,7 @@ OPPONENT = ["Charizard", "Garchomp", "Kingambit", "Aerodactyl", "Sylveon", "Fari
 
 class ServiceTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.service = AppService()
+        self.service = AppService(brain=CodexBattleBrain(api_key=""))
         self.created = self.service.create_match({"opponent_team": OPPONENT})
         self.match_id = self.created["state"]["match_id"]
 
@@ -39,6 +40,12 @@ class ServiceTests(unittest.TestCase):
         self.assertGreater(response_model["scenarios_evaluated"], 1)
         self.assertTrue(self.created["recommendation"]["primary"]["principal_lines"])
         self.assertIn("modelled_opponent_moves", calculator)
+        self.assertEqual(8, len(self.created["recommendation"]["candidate_catalog"]))
+        self.assertEqual(
+            "deterministic",
+            self.created["recommendation"]["brain"]["decision_source"],
+        )
+        self.assertEqual("fallback", self.created["recommendation"]["brain"]["status"])
 
     def test_meta_snapshot_is_versioned_and_action_prior_is_explicit(self) -> None:
         species = self.service.meta.snapshot["pokemon"][0]["name"]

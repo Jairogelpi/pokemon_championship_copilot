@@ -8,6 +8,7 @@ from champions_copilot.events import BattleEvent, apply_event, replay
 from champions_copilot.mechanics import calculate_damage_range, effective_speed
 from champions_copilot.team import PLAYER_TEAM, create_match
 
+from .codex_brain import CodexBattleBrain
 from .openai_adapter import OpenAIEventInterpreter
 from .meta import MetaRepository
 from .opponent import build_response_model
@@ -22,9 +23,11 @@ class AppService:
         self,
         store: InMemoryStore | None = None,
         calculator: ShowdownCalculator | None = None,
+        brain: CodexBattleBrain | None = None,
     ) -> None:
         self.store = store or InMemoryStore()
         self.openai = OpenAIEventInterpreter()
+        self.brain = brain or CodexBattleBrain()
         self.calculator = calculator or ShowdownCalculator()
         self.meta = MetaRepository(self.calculator.repo_root)
 
@@ -35,9 +38,14 @@ class AppService:
         calculator = self.calculator.health()
         return {
             "status": "ok" if calculator.get("available") else "degraded",
-            "policy_version": "adversarial-search-0.3",
-            "validation_status": "ADVERSARIAL_SHOWDOWN_MODEL",
-            "openai_configured": self.openai.configured,
+            "policy_version": "codex-strategist-0.4",
+            "validation_status": (
+                "CODEX_STRATEGIST_AVAILABLE"
+                if self.brain.configured
+                else "ADVERSARIAL_SHOWDOWN_MODEL"
+            ),
+            "openai_configured": self.openai.configured or self.brain.configured,
+            "codex_brain": self.brain.status(),
             "showdown": calculator,
             "meta": self.meta.status(),
         }
@@ -278,14 +286,20 @@ class AppService:
                 "engine": "@smogon/calc",
                 "message": str(exc),
             }
-        result = recommend_actions(
+        baseline = recommend_actions(
             record.state,
             record.beliefs,
             damage_estimates=damage_estimates,
             incoming_threats=incoming_threats,
             calculator_status=calculator_status,
             concrete_response_model=response_model,
-        ).to_dict()
+        )
+        result = self.brain.decide(
+            state=record.state,
+            beliefs=record.beliefs,
+            recommendation=baseline,
+            events=[event.to_dict() for event in record.events],
+        )
         record.recommendation_revision = record.state.revision
         record.cached_recommendation = result
         return result

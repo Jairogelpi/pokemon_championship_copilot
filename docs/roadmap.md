@@ -40,6 +40,11 @@ battle transition adapter that produces legal next states and explicit chance
 branches from resolved joint actions. Expected-damage shortcuts do not satisfy
 this gate.
 
+Codex strategist 0.4 may select a strategically preferable line from the top
+eight verified candidates and expose opponent-plan hypotheses. This improves
+judgment over the bounded evidence but does not satisfy the multi-ply gate:
+Codex is not allowed to manufacture future battle states.
+
 Exit: `TACTICAL_SEARCH_VERIFIED`.
 
 ## Phase 5: Battle interface and interpretation
