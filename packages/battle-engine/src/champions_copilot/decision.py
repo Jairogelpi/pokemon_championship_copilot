@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping
 
 from .actions import JointAction, SingleAction, generate_legal_joint_actions
@@ -114,7 +114,8 @@ class Recommendation:
     calculator: dict[str, Any]
     response_model: dict[str, Any]
     candidate_catalog: tuple[RankedAction, ...] = ()
-    policy_version: str = "adversarial-search-0.5"
+    multi_turn: dict[str, Any] = field(default_factory=dict)
+    policy_version: str = "adversarial-search-0.6"
     validation_status: str = "ADVERSARIAL_SHOWDOWN_MODEL"
 
     def to_dict(self) -> dict[str, Any]:
@@ -138,6 +139,10 @@ class Recommendation:
                 }
                 for rank, candidate in enumerate(self.candidate_catalog, start=1)
             ],
+            "multi_turn": self.multi_turn or {
+                "status": "not_run",
+                "completed_depth": 0,
+            },
             "policy_version": self.policy_version,
             "validation_status": self.validation_status,
         }

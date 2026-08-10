@@ -12,6 +12,7 @@ from .battle_tools import BattleKnowledgeTools
 from .codex_brain import CodexBattleBrain
 from .openai_adapter import OpenAIEventInterpreter
 from .meta import MetaRepository
+from .multiturn import MultiTurnConfig, MultiTurnPlanner
 from .opponent import build_response_model
 from .parser import interpret_locally
 from .showdown import ShowdownCalculationError, ShowdownCalculator, ShowdownUnavailable
@@ -25,12 +26,18 @@ class AppService:
         store: InMemoryStore | None = None,
         calculator: ShowdownCalculator | None = None,
         brain: CodexBattleBrain | None = None,
+        multiturn: MultiTurnPlanner | None = None,
     ) -> None:
         self.store = store or InMemoryStore()
         self.openai = OpenAIEventInterpreter()
         self.brain = brain or CodexBattleBrain()
         self.calculator = calculator or ShowdownCalculator()
         self.meta = MetaRepository(self.calculator.repo_root)
+        self.multiturn = multiturn or MultiTurnPlanner(
+            self.calculator,
+            self.meta,
+            MultiTurnConfig.from_environment(default_enabled=self.brain.configured),
+        )
 
     def close(self) -> None:
         self.calculator.close()
@@ -39,7 +46,7 @@ class AppService:
         calculator = self.calculator.health()
         return {
             "status": "ok" if calculator.get("available") else "degraded",
-            "policy_version": "codex-strategist-0.5",
+            "policy_version": "codex-strategist-0.6",
             "validation_status": (
                 "CODEX_STRATEGIST_AVAILABLE"
                 if self.brain.configured
@@ -47,6 +54,7 @@ class AppService:
             ),
             "openai_configured": self.openai.configured or self.brain.configured,
             "codex_brain": self.brain.status(),
+            "multi_turn": self.multiturn.status(),
             "showdown": calculator,
             "meta": self.meta.status(),
         }
@@ -295,6 +303,13 @@ class AppService:
             calculator_status=calculator_status,
             concrete_response_model=response_model,
         )
+        if response_model:
+            baseline = self.multiturn.plan(
+                state=record.state,
+                beliefs=record.beliefs,
+                recommendation=baseline,
+                response_model=response_model,
+            )
         result = self.brain.decide(
             state=record.state,
             beliefs=record.beliefs,

@@ -34,17 +34,19 @@ Exit: `BELIEF_ENGINE_CALIBRATED`.
 Deliver simultaneous-action search, stochastic outcomes, risk-sensitive
 ranking, principal lines, endgame solving, and score decomposition.
 
-Current boundary: bounded one-turn adversarial search is live and the generic
-multi-ply expectiminimax kernel is implemented. The next gate is a verified
-battle transition adapter that produces legal next states and explicit chance
-branches from resolved joint actions. Expected-damage shortcuts do not satisfy
-this gate.
+Current boundary: bounded one-turn adversarial search remains exhaustive inside
+its declared response model. A live depth-two expectiminimax search now consumes
+deterministic samples of reachable Showdown-compatible next states and fails
+closed at undeclared mechanics. The next gate is complete transition coverage
+for forced replacements, statuses, critical hits, abilities, items, residuals,
+observation-driven belief updates, and Champions-specific divergences.
 
-Codex strategist 0.5 may research the canonical position with read-only
+Codex strategist 0.6 may research the canonical position with read-only
 mechanics, learnset, meta, matchup, candidate, and damage tools before selecting
-a strategically preferable line from the top twelve verified candidates. This improves
-judgment over the bounded evidence but does not satisfy the multi-ply gate:
-Codex is not allowed to manufacture future battle states.
+a strategically preferable line from the top twelve verified candidates. Codex
+is not allowed to manufacture future battle states; it receives only states
+produced by the transition adapter. This is a compatibility milestone, not yet
+`TACTICAL_SEARCH_VERIFIED`.
 
 Exit: `TACTICAL_SEARCH_VERIFIED`.
 

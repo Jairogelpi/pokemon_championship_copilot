@@ -1,8 +1,8 @@
 # Pokémon Champions Battle Copilot
 
 An unofficial, stateful battle assistant for Pokémon Champions doubles. Release
-0.5 gives Codex a read-only battle-research loop over evidence produced by the
-pinned upstream
+0.6 connects Codex and the risk-aware search kernel to sampled, reachable future
+battle states grounded in the pinned upstream
 [`@smogon/calc`](https://github.com/smogon/damage-calc) engine used by the
 Pokémon Showdown damage calculator.
 
@@ -13,9 +13,10 @@ mechanics, legality, damage, or speed.
 ## North-star goal
 
 Build a decision system whose play quality can be demonstrated at the level of
-a 2,000-point Master player for its supported team and regulation. Release 0.5
-combines exhaustive bounded one-turn evaluation with tool-grounded Codex selection;
-it is not yet evidence that this goal has been reached.
+a 2,000-point Master player for its supported team and regulation. Release 0.6
+combines exhaustive bounded one-turn evaluation, a verified-sampled two-turn
+search, and tool-grounded Codex selection; it is not yet evidence that this goal
+has been reached.
 
 This is not a promise to predict every move. Pokémon contains hidden
 information, simultaneous choices, novel sets, and randomness. The system must
@@ -129,6 +130,10 @@ make run
 
 Codex receives canonical state, beliefs, recent events, twelve verified player
 candidates, calculator evidence, response coverage, and principal counter-lines.
+It also receives the completed multi-turn principal line, search statistics,
+reachable sampled outcomes, and explicit uncertainty boundaries. Multi-turn
+search defaults on when Codex is configured and can be tuned through the
+`MULTITURN_*` variables in `.env.example`.
 Before selecting, the Responses API requires at least one read-only tool call.
 Codex can inspect candidates and exact damage matrices, query any Gen 9 species,
 move, item, ability, nature or type, load complete learnsets, test type matchups,
@@ -140,7 +145,7 @@ condition, failure mode, risk, and explanation. Invalid output, refusal,
 timeout, or API failure falls back to the deterministic anchor. Event proposals
 still require explicit confirmation before the engine applies them.
 
-## Implemented in Codex strategist 0.5
+## Implemented in Codex strategist 0.6
 
 - Complete in-memory match lifecycle and six-versus-six team preview.
 - Bring-four and lead baseline for `GMKXPHAS7D`.
@@ -191,6 +196,27 @@ still require explicit confirmation before the engine applies them.
   Room, faster KO, and Fake Out suppression affect the incoming-risk estimate.
 - Inspectable principal counter-lines showing probability, outgoing and
   incoming damage, KO risk, utility, and speed-order evidence.
+- Live risk-aware two-turn search over deterministic samples of exact hidden
+  bulk scenarios, accuracy outcomes, and weighted Showdown damage rolls. Every
+  sampled next state is reachable under its selected scenario; expected damage
+  is never written into state as if it were an actual roll, and a sampled hidden
+  EV, nature, and legal-ability profile remains locked throughout the future
+  trajectory.
+- Verified sampled turn transitions for simultaneous switching and retargeting,
+  priority and dynamic final speed, Tailwind, Trick Room, Protect and Feint,
+  Fake Out and flinching, Sucker Punch, spread targeting and friendly fire,
+  Focus Sash and Sturdy, recoil and drain, simple secondary effects, burn and
+  poison residual damage, and field-duration decrement.
+- Deterministic systematic sampling of the complete opponent-response
+  distribution, with node/time budgets, transposition caching, lower-tail risk,
+  principal lines, and exact search telemetry.
+- Strict promotion gate: an incomplete depth or too many unresolved mechanics
+  preserves the exhaustive one-turn recommendation. Forced replacement,
+  unsupported effects, complex counters, and unverified residuals become
+  penalized uncertainty leaves instead of fabricated futures.
+- Battle-console evidence for multi-turn depth, sampled outcomes, resolved
+  fraction, promotion decision, and principal line, explicitly labelled
+  sampled and non-exhaustive.
 - Battle console with preview, live state, recommendations, alternatives,
   belief state, fast input, interpretation proposals, log, undo, and export.
 - Codex strategic selection through the Responses API using strict Structured
@@ -227,10 +253,11 @@ See:
 - [ADR-0004: verified multi-ply transition boundary](docs/adr/0004-multi-ply-transition-boundary.md)
 - [ADR-0005: Codex strategic selector boundary](docs/adr/0005-codex-strategic-selector.md)
 - [ADR-0006: tool-grounded battle research](docs/adr/0006-tool-grounded-battle-research.md)
+- [ADR-0007: live verified-sampled multi-turn search](docs/adr/0007-live-verified-sampled-multiturn.md)
 
 ## Status
 
-Codex strategist 0.5 is runnable and tested. When an API key is configured,
+Codex strategist 0.6 is runnable and tested. When an API key is configured,
 Codex owns the final strategic choice inside the verified candidate envelope;
 otherwise the same endpoint degrades to the deterministic anchor. Damage values
 are exact under each displayed Showdown Gen 9 scenario. Pokémon Champions is not a

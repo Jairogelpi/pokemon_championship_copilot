@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-10
+- Implemented in part by: ADR-0007
 
 ## Context
 
@@ -38,9 +39,9 @@ The future battle adapter must own:
 - belief updates caused by observable outcomes;
 - a stable state key containing every value that can change continuation value.
 
-The live recommendation service remains on the one-turn policy until the
-adapter passes its mechanics and replay fixtures. The existence of the generic
-kernel alone must not be described as live multi-turn play.
+The live recommendation service remains on the one-turn policy until a bounded
+adapter passes its declared mechanics and replay fixtures. The existence of the
+generic kernel alone must not be described as live multi-turn play.
 
 ## Consequences
 
@@ -50,3 +51,7 @@ kernel alone must not be described as live multi-turn play.
 - State-transition correctness becomes the next critical implementation slice.
 - Multi-ply promotion requires both transition fixtures and live integration
   tests, not only synthetic search-tree tests.
+
+ADR-0007 satisfies this boundary for a declared compatibility subset and keeps
+unsupported continuations as explicit uncertainty leaves. It does not claim
+complete mechanics coverage or exhaustive future search.

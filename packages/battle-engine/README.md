@@ -26,6 +26,7 @@ of Master 2000 performance.
 The generic multi-ply kernel supports iterative deepening, chance branches,
 probability normalization, expected and lower-tail value, catastrophic-loss
 penalties, deterministic node budgets, optional time budgets, transposition
-caching, and inspectable principal lines. It is tested independently but is not
-yet connected to the live policy: a verified battle transition adapter is
-required before future turns can be searched without inventing state.
+caching, and inspectable principal lines. The API now connects it to a bounded,
+verified-sampled transition adapter. Unsupported mechanics terminate as
+explicit uncertainty leaves; therefore the live depth-two policy is sampled,
+not an exhaustive or complete battle simulator.

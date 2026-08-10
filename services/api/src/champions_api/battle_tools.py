@@ -47,6 +47,7 @@ class BattleKnowledgeTools:
             "generation": 9,
             "candidate_ids": list(self._candidates),
             "search_space": response_model.get("search_space", {}),
+            "multi_turn": self.recommendation.multi_turn,
             "mechanics": self.recommendation.calculator,
             "meta": self.meta.status(),
             "active_player": [

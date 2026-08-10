@@ -117,6 +117,7 @@ class CodexBattleBrain:
                 "opponent_response_model": baseline["response_model"],
                 "calculator": baseline["calculator"],
                 "assumptions": baseline["assumptions"],
+                "multi_turn_analysis": baseline["multi_turn"],
             },
             "verified_knowledge_manifest": (
                 knowledge_tools.manifest() if knowledge_tools is not None else None
@@ -243,6 +244,9 @@ class CodexBattleBrain:
             "mechanics, damage, learnset, type, or meta fact needed before deciding. Tool output "
             "is evidence; tool errors are not permission to guess. Compare principal counter-lines "
             "and search-space coverage, not only the headline score. "
+            "When a completed multi-turn analysis exists, treat its reachable sampled states, "
+            "principal continuation and uncertainty leaves as strategic evidence; never call "
+            "sampled coverage exhaustive. "
             "identify the player's current win condition, and prefer a line that remains strong if "
             "the most likely read is wrong. You may disagree with the deterministic anchor when "
             "the recorded strategic evidence justifies it. Explain only lines represented in "
@@ -403,7 +407,7 @@ class CodexBattleBrain:
         result["assumptions"] = list(
             dict.fromkeys([*baseline["assumptions"], *decision["assumptions"]])
         )
-        result["policy_version"] = "codex-strategist-0.5"
+        result["policy_version"] = "codex-strategist-0.6"
         result["validation_status"] = "CODEX_SELECTED_FROM_VERIFIED_CANDIDATES"
         result["brain"] = {
             **self.status(),

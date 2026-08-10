@@ -101,7 +101,7 @@ class CodexBattleBrainTests(unittest.TestCase):
         )
         self.assertEqual("codex", result["brain"]["decision_source"])
         self.assertTrue(result["brain"]["overrode_deterministic_anchor"])
-        self.assertEqual("codex-strategist-0.5", result["policy_version"])
+        self.assertEqual("codex-strategist-0.6", result["policy_version"])
         self.assertEqual(
             "CODEX_SELECTED_FROM_VERIFIED_CANDIDATES",
             result["validation_status"],

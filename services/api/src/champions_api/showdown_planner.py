@@ -60,6 +60,7 @@ def _pokemon_spec(
     *,
     evs: dict[str, int] | None = None,
     nature: str | None = None,
+    ability: str | None = None,
 ) -> dict[str, Any]:
     facts = _known(side, pokemon.id)
     item = facts.get("item", pokemon.item)
@@ -80,12 +81,12 @@ def _pokemon_spec(
         "status": pokemon.status,
         "alliesFainted": sum(member.fainted for member in side.roster.values()),
     }
-    ability = facts.get("ability", pokemon.ability)
+    resolved_ability = facts.get("ability", ability or pokemon.ability)
     tera_type = facts.get("tera_type", pokemon.tera_type)
     if item:
         spec["item"] = item
-    if ability:
-        spec["ability"] = ability
+    if resolved_ability:
+        spec["ability"] = resolved_ability
     if tera_type:
         spec["teraType"] = tera_type
     return spec
@@ -138,7 +139,11 @@ def _relevant_scenarios(
     rows: list[tuple[BulkScenario, dict[str, Any]]], category: str
 ) -> list[tuple[BulkScenario, dict[str, Any]]]:
     excluded = "max_special_defense" if category == "Physical" else "max_defense"
-    selected = [(scenario, result) for scenario, result in rows if scenario.name != excluded]
+    selected = (
+        rows
+        if len(rows) == 1
+        else [(scenario, result) for scenario, result in rows if scenario.name != excluded]
+    )
     total = sum(scenario.weight for scenario, _ in selected)
     return [
         (
@@ -155,7 +160,11 @@ def _relevant_offense_scenarios(
     rows: list[tuple[BulkScenario, dict[str, Any]]], category: str
 ) -> list[tuple[BulkScenario, dict[str, Any]]]:
     excluded = "max_special_attack" if category == "Physical" else "max_attack"
-    selected = [(scenario, result) for scenario, result in rows if scenario.name != excluded]
+    selected = (
+        rows
+        if len(rows) == 1
+        else [(scenario, result) for scenario, result in rows if scenario.name != excluded]
+    )
     total = sum(scenario.weight for scenario, _ in selected)
     return [
         (
@@ -192,8 +201,10 @@ def _estimate_from_rows(
             "ko_probability": result["koProbabilityWithBaseAccuracy"],
             "ko_probability_on_hit": result["koProbabilityOnHit"],
             "base_accuracy_probability": result["baseAccuracyProbability"],
+            "defender_max_hp": result["defenderMaxHP"],
             "rolls_percent": [
                 {
+                    "damage": roll["damage"],
                     "percent": round(
                         roll["damage"] * 100 / result["defenderMaxHP"], 6
                     ),
@@ -433,6 +444,9 @@ def calculate_canonical_damage(
     actor_id: str,
     move: str,
     target_id: str,
+    target_side: str | None = None,
+    attacker_profile: dict[str, Any] | None = None,
+    defender_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Calculate a current-position matchup after verifying Gen 9 learnability.
 
@@ -444,7 +458,11 @@ def calculate_canonical_damage(
     if side not in {"player", "opponent"}:
         raise ValueError("side must be player or opponent")
     attacker_side = state.side(side)
-    defender_side = state.side("opponent" if side == "player" else "player")
+    resolved_target_side = target_side or ("opponent" if side == "player" else "player")
+    if resolved_target_side not in {"player", "opponent"}:
+        raise ValueError("target_side must be player or opponent")
+    defender_side = state.side(resolved_target_side)
+    friendly_fire = resolved_target_side == side
     if actor_id not in attacker_side.active:
         raise ValueError("actor must be active in the canonical position")
     if actor_id not in attacker_side.roster or attacker_side.roster[actor_id].fainted:
@@ -471,7 +489,7 @@ def calculate_canonical_damage(
             "source": "pinned @pkmn/data + @pkmn/dex",
         }
 
-    offense = side == "opponent"
+    offense = side == "opponent" and not friendly_fire
     if offense:
         facts = _known(attacker_side, actor_id)
         scenarios = (
@@ -480,7 +498,28 @@ def calculate_canonical_damage(
             else OFFENSE_SCENARIOS
         )
     else:
-        scenarios = _defender_scenarios(defender_side, target)
+        scenarios = (
+            (
+                BulkScenario(
+                    "confirmed_friendly_set",
+                    1.0,
+                    dict(target.evs),
+                    target.nature,
+                ),
+            )
+            if friendly_fire and side == "player"
+            else _defender_scenarios(defender_side, target)
+        )
+    selected_profile = attacker_profile if offense else defender_profile
+    if selected_profile is not None:
+        scenarios = (
+            BulkScenario(
+                str(selected_profile["name"]),
+                1.0,
+                dict(selected_profile.get("evs", {})),
+                selected_profile.get("nature"),
+            ),
+        )
 
     requests: list[dict[str, Any]] = []
     rows: list[tuple[BulkScenario, dict[str, Any]]] = []
@@ -496,7 +535,50 @@ def calculate_canonical_damage(
             defender = _pokemon_spec(
                 defender_side, target, evs=scenario.evs, nature=scenario.nature
             )
-            field = _field(state, target)
+            if friendly_fire:
+                weather = (
+                    WEATHER.get(str(state.field.weather).lower())
+                    if state.field.weather
+                    else None
+                )
+                terrain = (
+                    TERRAIN.get(str(state.field.terrain).lower())
+                    if state.field.terrain
+                    else None
+                )
+                field = {
+                    "gameType": "Doubles",
+                    "attackerSide": {
+                        "isHelpingHand": bool(
+                            attacker_side.side_conditions.get("helping_hand", 0)
+                        ),
+                    },
+                    "defenderSide": {
+                        "isProtected": target.protected,
+                    },
+                }
+                if weather:
+                    field["weather"] = weather
+                if terrain:
+                    field["terrain"] = terrain
+            else:
+                field = _field(state, target)
+        if attacker_profile is not None:
+            attacker = _pokemon_spec(
+                attacker_side,
+                actor,
+                evs=dict(attacker_profile.get("evs", {})),
+                nature=attacker_profile.get("nature"),
+                ability=attacker_profile.get("ability"),
+            )
+        if defender_profile is not None:
+            defender = _pokemon_spec(
+                defender_side,
+                target,
+                evs=dict(defender_profile.get("evs", {})),
+                nature=defender_profile.get("nature"),
+                ability=defender_profile.get("ability"),
+            )
         requests.append(
             {
                 "generation": 9,
@@ -520,7 +602,50 @@ def calculate_canonical_damage(
         "damage_applicable": True,
         "actor_species": actor.name,
         "target_species": target.name,
+        "target_side": resolved_target_side,
+        "friendly_fire": friendly_fire,
         "learnset_verified": True,
         "learnset_source": "pinned @pkmn/data + @pkmn/dex",
         "estimate": estimate.to_dict(),
     }
+
+
+def calculate_canonical_speed(
+    calculator: ShowdownCalculator,
+    state: BattleState,
+    *,
+    side: str,
+    actor_id: str,
+    profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if side not in {"player", "opponent"}:
+        raise ValueError("side must be player or opponent")
+    side_state = state.side(side)
+    if actor_id not in side_state.roster or side_state.roster[actor_id].fainted:
+        raise ValueError("speed actor is unavailable")
+    weather = WEATHER.get(str(state.field.weather).lower()) if state.field.weather else None
+    terrain = TERRAIN.get(str(state.field.terrain).lower()) if state.field.terrain else None
+    field: dict[str, Any] = {
+        "gameType": "Doubles",
+        "attackerSide": {
+            "isTailwind": bool(side_state.side_conditions.get("tailwind", 0)),
+        },
+    }
+    if weather:
+        field["weather"] = weather
+    if terrain:
+        field["terrain"] = terrain
+    return calculator.speed(
+        {
+            "generation": 9,
+            "pokemon": _pokemon_spec(
+                side_state,
+                side_state.roster[actor_id],
+                evs=dict(profile.get("evs", {})) if profile else None,
+                nature=profile.get("nature") if profile else None,
+                ability=profile.get("ability") if profile else None,
+            ),
+            "field": field,
+            "trickRoom": state.field.trick_room_turns > 0,
+        }
+    )

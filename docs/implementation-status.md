@@ -2,7 +2,7 @@
 
 ## Current release boundary
 
-Codex strategist 0.5 is a complete vertical slice. A user can start the server,
+Codex strategist 0.6 is a complete vertical slice. A user can start the server,
 enter a team preview, receive a bring-four and lead baseline, record a match,
 inspect beliefs, request paired actions, correct history, and export a replayable
 log. With OpenAI credentials, Codex makes the final strategic selection from a
@@ -28,7 +28,9 @@ deterministic anchor.
 | Priority and scenario speed | Implemented in one-turn race evaluation | Damage metadata and principal-line output |
 | Concrete joint responses | Exhaustive inside the bounded model | Moves, targets, Protect, legal switches, other branch, coverage test |
 | Decision ranking | One-turn adversarial search with principal lines | Determinism, explanation, coverage, and service tests |
-| Multi-ply search kernel | Implemented, not yet live-wired | Iterative-depth, risk-tail, cache, budget, and fail-closed tests |
+| Multi-ply search kernel | Implemented and live-wired at depth two | Iterative-depth, risk-tail, cache, budget, and service integration tests |
+| Sampled battle transition adapter | Implemented compatibility subset | Reachable-roll, switching, speed, Focus Sash, Protect, spread, friendly-fire, and deterministic replay tests |
+| Multi-turn promotion gate | Implemented, fail-closed | Completed-depth, resolved-sample threshold, uncertainty, and fallback assertions |
 | HTTP API | Implemented | Real socket integration tests |
 | Battle console | Implemented | Served by the tested HTTP boundary |
 | Local text interpretation | Implemented | Spanish HP proposal test |
@@ -48,10 +50,12 @@ deterministic anchor.
 - Authoritative Champions divergences from Showdown Gen 9, especially custom
   Mega forms and items. Stock Showdown mechanics are integrated and labelled as
   a compatibility profile rather than silently assumed to be Champions truth.
-- Verified battle transition adapter connecting live Showdown outcomes to the
-  multi-ply kernel. The kernel itself is implemented; the current live policy
-  remains one-turn.
-- Beam search, Monte Carlo rollouts, and endgame solver.
+- Complete transition coverage for forced replacements, critical hits, every
+  status counter, ability, item, move-specific rule, weather residual, and
+  Champions-specific divergence. Unsupported branches currently terminate as
+  explicit uncertainty leaves.
+- Observation-driven belief updates inside future branches, calibrated set
+  priors, wider response sampling, and an endgame solver.
 - Calibrated win-value model and policy weights.
 - Durable server-side match storage and accounts.
 - Screenshot, continuous capture, OCR, and HP-bar measurement.
@@ -64,9 +68,10 @@ The current product is:
 
 > A runnable, state-correct Battle Copilot with pinned Showdown damage rolls,
 > queryable mechanics data, versioned meta priors, explicit hidden-information
-> uncertainty, exhaustive bounded one-turn replies, inspectable principal
-> counter-lines, and optional tool-grounded Codex strategic selection restricted
-> to verified legal candidates.
+> uncertainty, exhaustive bounded one-turn replies, verified-sampled two-turn
+> continuations with explicit uncertainty leaves, inspectable principal lines,
+> and optional tool-grounded Codex strategic selection restricted to verified
+> legal candidates.
 
 It is not yet:
 

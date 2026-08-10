@@ -15,6 +15,7 @@ const require = createRequire(import.meta.url);
 const { version: packageVersion } = require("@smogon/calc/package.json");
 const { version: dataVersion } = require("@pkmn/data/package.json");
 const { version: dexVersion } = require("@pkmn/dex/package.json");
+const { getFinalSpeed } = require("@smogon/calc/dist/mechanics/util");
 const dataGenerations = new DataGenerations(Dex);
 const STATUS = {
   burn: "brn",
@@ -157,6 +158,26 @@ function calculateOne(request) {
   };
 }
 
+function speedOne(request) {
+  const generation = Number(request.generation || 9);
+  const gen = CalcGenerations.get(generation);
+  const pokemon = buildPokemon(gen, request.pokemon);
+  const field = normalizedField(request.field);
+  const side = field.attackerSide;
+  return {
+    source: "@smogon/calc",
+    sourceVersion: packageVersion,
+    generation,
+    pokemon: pokemon.name,
+    rawSpeed: pokemon.rawStats.spe,
+    boostedSpeed: pokemon.stats.spe,
+    finalSpeed: getFinalSpeed(gen, pokemon, field, side),
+    maxHP: pokemon.maxHP(),
+    trickRoom: Boolean(request.trickRoom),
+    tailwind: side.isTailwind,
+  };
+}
+
 function compactEffect(effect) {
   if (!effect) throw new Error("entry was not found in the selected generation");
   return {
@@ -186,6 +207,8 @@ function compactMove(move) {
     recoil: move.recoil || null,
     drain: move.drain || null,
     secondary: move.secondary || null,
+    secondaries: move.secondaries || null,
+    selfEffect: move.self || null,
   };
 }
 
@@ -317,6 +340,7 @@ async function handle(message) {
     };
   }
   if (message.method === "calculate") return calculateOne(message.params || {});
+  if (message.method === "speed") return speedOne(message.params || {});
   if (message.method === "batch") {
     const requests = message.params?.requests;
     if (!Array.isArray(requests)) throw new Error("batch requests must be an array");

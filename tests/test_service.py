@@ -54,6 +54,9 @@ class ServiceTests(unittest.TestCase):
             self.created["recommendation"]["brain"]["decision_source"],
         )
         self.assertEqual("fallback", self.created["recommendation"]["brain"]["status"])
+        self.assertEqual(
+            "disabled", self.created["recommendation"]["multi_turn"]["status"]
+        )
 
     def test_meta_snapshot_is_versioned_and_action_prior_is_explicit(self) -> None:
         species = self.service.meta.snapshot["pokemon"][0]["name"]

@@ -74,6 +74,9 @@ class ShowdownCalculator:
     def calculate(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("calculate", payload)
 
+    def speed(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("speed", payload)
+
     def batch(self, requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not requests:
             return []

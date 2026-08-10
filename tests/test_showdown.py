@@ -57,6 +57,27 @@ class ShowdownCalculatorTests(unittest.TestCase):
         self.assertTrue(results[0]["ok"])
         self.assertFalse(results[1]["ok"])
 
+    def test_final_speed_uses_pinned_item_status_and_tailwind_mechanics(self) -> None:
+        speed = self.calculator.speed(
+            {
+                "generation": 9,
+                "pokemon": {
+                    "name": "Garchomp",
+                    "level": 50,
+                    "nature": "Jolly",
+                    "evs": {"spe": 252},
+                    "item": "Choice Scarf",
+                },
+                "field": {
+                    "gameType": "Doubles",
+                    "attackerSide": {"isTailwind": True},
+                },
+            }
+        )
+        self.assertEqual(169, speed["rawSpeed"])
+        self.assertEqual(507, speed["finalSpeed"])
+        self.assertEqual(183, speed["maxHP"])
+
     def test_turn_matrix_covers_every_player_move_target_pair(self) -> None:
         preview = recommend_team_preview(OPPONENT)
         state = create_match(OPPONENT, preview["selected"], preview["lead"])

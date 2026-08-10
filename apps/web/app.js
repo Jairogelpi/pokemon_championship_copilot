@@ -176,6 +176,34 @@ function renderRecommendation() {
     )
     .join("");
   const brain = recommendation.brain || {};
+  const multi = recommendation.multi_turn || {};
+  const multiSearch = multi.search || {};
+  const multiSteps = (multi.best?.principal_line || [])
+    .map(
+      (step, index) => `
+        <div class="multiturn-step">
+          <b>T${index + 1}</b>
+          <span><strong>${escapeHtml(step.action)}</strong><em>vs ${escapeHtml(step.response)}</em></span>
+          <small>${escapeHtml(step.outcome)} · ${(Number(step.branch_probability || 0) * 100).toFixed(0)}%</small>
+        </div>`,
+    )
+    .join("");
+  const multiPanel = ["ok", "partial"].includes(multi.status)
+    ? `
+      <div class="multiturn-panel ${multi.promotion_eligible ? "promoted" : "guarded"}">
+        <div class="multiturn-head">
+          <span>Verified sampled search · not exhaustive</span>
+          <strong>depth ${multi.completed_depth || 0}/${multi.requested_depth || multiSearch.requested_depth || "?"}</strong>
+        </div>
+        <div class="multiturn-metrics">
+          <span>${(Number(multi.resolved_sample_fraction || 0) * 100).toFixed(0)}% resolved</span>
+          <span>${multiSearch.nodes_expanded || 0} nodes</span>
+          <span>${multi.transition_telemetry?.sampled_outcomes || 0} outcomes</span>
+          <span>${multi.promotion_eligible ? "line promoted" : "one-turn line preserved"}</span>
+        </div>
+        ${multiSteps ? `<details><summary>Principal multi-turn line</summary>${multiSteps}</details>` : ""}
+      </div>`
+    : "";
   const brainStatus = brain.status === "ok"
     ? `Codex selected ${brain.selected_candidate_id} · ${(brain.confidence * 100).toFixed(0)}% confidence`
     : `Deterministic fallback · ${brain.reason || "Codex unavailable"}`;
@@ -197,6 +225,7 @@ function renderRecommendation() {
       ${brain.main_failure_mode ? `<p><b>Main failure mode:</b> ${escapeHtml(brain.main_failure_mode)}</p>` : ""}
       ${opponentPlan ? `<details><summary>Codex opponent model</summary>${opponentPlan}</details>` : ""}
     </div>
+    ${multiPanel}
     <div class="score-row">
       <div><span>Expected damage</span><strong>${primary.score.expected_damage_percent.toFixed(1)}%</strong></div>
       <div><span>Combined KO</span><strong>${(primary.score.knockout_probability * 100).toFixed(0)}%</strong></div>
