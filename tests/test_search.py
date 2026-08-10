@@ -91,6 +91,36 @@ class TreeGame:
 
 
 class RiskAwareSearchTests(unittest.TestCase):
+    def test_zero_cost_replacement_transition_does_not_consume_turn_depth(self) -> None:
+        class ReplacementGame(TreeGame):
+            def transition_depth_cost(
+                self,
+                state: Any,
+                action: Any,
+                response: WeightedResponse,
+                outcome: ChanceOutcome,
+            ) -> int:
+                del action, response, outcome
+                return 0 if state == "replacement" else 1
+
+        game = ReplacementGame(
+            edges={
+                "replacement": [
+                    Edge("send reserve", "reply", 1, "ready", 1, "turn", 0)
+                ],
+                "turn": [Edge("attack", "reply", 1, "ko", 1, "win", 10)],
+            },
+            evaluations={"turn": 0},
+            terminals={"win": 100},
+        )
+        result = RiskAwareExpectiminimax(
+            SearchConfig(max_depth=1, node_budget=20, discount=1)
+        ).search(game, "replacement")
+
+        self.assertEqual("send reserve", result.best.action)
+        self.assertEqual(2, len(result.best.principal_line))
+        self.assertEqual("attack", result.best.principal_line[1].action)
+
     def test_depth_two_can_reverse_a_greedy_choice(self) -> None:
         game = TreeGame(
             edges={

@@ -37,10 +37,10 @@ class SingleAction:
 
 @dataclass(frozen=True, slots=True)
 class JointAction:
-    actions: tuple[SingleAction, SingleAction]
+    actions: tuple[SingleAction, ...]
 
     def label(self, state: BattleState) -> str:
-        return " + ".join(action.label(state) for action in self.actions)
+        return " + ".join(action.label(state) for action in self.actions) or "hold position"
 
     def to_dict(self) -> dict[str, Any]:
         return {"actions": [action.to_dict() for action in self.actions]}
@@ -74,13 +74,19 @@ def actions_for_pokemon(state: BattleState, pokemon: PokemonState) -> list[Singl
 
 
 def generate_legal_joint_actions(state: BattleState) -> list[JointAction]:
-    if len(state.player.active) != 2:
+    pools = [
+        actions_for_pokemon(state, state.player.roster[pokemon_id])
+        for pokemon_id in state.player.active
+        if not state.player.roster[pokemon_id].fainted
+    ]
+    if not pools or any(not pool for pool in pools):
         return []
-    left = actions_for_pokemon(state, state.player.roster[state.player.active[0]])
-    right = actions_for_pokemon(state, state.player.roster[state.player.active[1]])
     result: list[JointAction] = []
-    for first, second in product(left, right):
-        if first.kind == second.kind == "switch" and first.switch_to == second.switch_to:
+    for choices in product(*pools):
+        switch_targets = [
+            action.switch_to for action in choices if action.kind == "switch"
+        ]
+        if len(switch_targets) != len(set(switch_targets)):
             continue
-        result.append(JointAction(actions=(first, second)))
+        result.append(JointAction(actions=tuple(choices)))
     return result

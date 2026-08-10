@@ -26,6 +26,24 @@ const STATUS = {
   freeze: "frz",
 };
 
+function latestDataSpecies(name, requestedGeneration) {
+  for (let generation = requestedGeneration; generation >= 1; generation -= 1) {
+    const gen = dataGenerations.get(generation);
+    const species = gen.species.get(name);
+    if (species) return { gen, species, generation };
+  }
+  return null;
+}
+
+function latestCalcSpecies(name, requestedGeneration) {
+  for (let generation = requestedGeneration; generation >= 1; generation -= 1) {
+    const gen = CalcGenerations.get(generation);
+    const species = gen.species.get(toID(name));
+    if (species) return { species, generation };
+  }
+  return null;
+}
+
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
 }
@@ -42,6 +60,11 @@ function pokemonOptions(spec = {}) {
 function buildPokemon(gen, spec = {}) {
   if (!spec.name) throw new Error("pokemon.name is required");
   const options = pokemonOptions(spec);
+  if (!gen.species.get(toID(spec.name))) {
+    const legacy = latestCalcSpecies(spec.name, gen.num);
+    if (!legacy) throw new Error("pokemon species was not found in any supported generation");
+    options.overrides = { ...legacy.species, ...(options.overrides || {}) };
+  }
   const atFullHealth = new Pokemon(gen, spec.name, options);
   if (spec.hpPercent === undefined || spec.hpPercent === null) return atFullHealth;
   const current = Math.max(1, Math.round(atFullHealth.maxHP() * clamp(Number(spec.hpPercent), 0, 100) / 100));
@@ -204,8 +227,20 @@ function compactMove(move) {
     target: move.target,
     flags: Object.keys(move.flags || {}).sort(),
     multihit: move.multihit || null,
+    critRatio: move.critRatio || 0,
+    willCrit: Boolean(move.willCrit),
     recoil: move.recoil || null,
     drain: move.drain || null,
+    heal: move.heal || null,
+    status: move.status || null,
+    boosts: move.boosts || null,
+    volatileStatus: move.volatileStatus || null,
+    weather: move.weather || null,
+    terrain: move.terrain || null,
+    sideCondition: move.sideCondition || null,
+    pseudoWeather: move.pseudoWeather || null,
+    slotCondition: move.slotCondition || null,
+    forceSwitch: Boolean(move.forceSwitch),
     secondary: move.secondary || null,
     secondaries: move.secondaries || null,
     selfEffect: move.self || null,
@@ -238,7 +273,9 @@ function lookupOne(request) {
   if (!name) throw new Error("name is required");
   let entry;
   if (kind === "species" || kind === "pokemon") {
-    entry = compactSpecies(gen.species.get(name));
+    const resolved = latestDataSpecies(name, generation);
+    if (!resolved) throw new Error("species was not found in any supported generation");
+    entry = { ...compactSpecies(resolved.species), dataGeneration: resolved.generation };
   } else if (kind === "move") {
     entry = compactMove(gen.moves.get(name));
   } else if (kind === "item") {
@@ -269,9 +306,9 @@ function lookupOne(request) {
 
 async function learnset(request) {
   const generation = Number(request.generation || 9);
-  const gen = dataGenerations.get(generation);
-  const species = gen.species.get(request.species);
-  if (!species) throw new Error("species was not found in the selected generation");
+  const resolved = latestDataSpecies(request.species, generation);
+  if (!resolved) throw new Error("species was not found in any supported generation");
+  const { gen, species } = resolved;
   const restriction = request.restriction || undefined;
   const learnable = await gen.learnsets.learnable(species.name, restriction);
   const moves = Object.entries(learnable || {})
@@ -286,6 +323,7 @@ async function learnset(request) {
     dataVersion,
     dexVersion,
     generation,
+    dataGeneration: resolved.generation,
     restriction: restriction || "generation-compatible transfers",
     species: compactSpecies(species),
     moveCount: moves.length,
@@ -297,12 +335,14 @@ function typeMatchup(request) {
   const generation = Number(request.generation || 9);
   const gen = dataGenerations.get(generation);
   const attackType = gen.types.get(request.attackType);
-  const defender = gen.species.get(request.defender);
+  const resolved = latestDataSpecies(request.defender, generation);
+  const defender = resolved?.species;
   if (!attackType) throw new Error("attackType was not found");
   if (!defender) throw new Error("defender species was not found");
   return {
     source: "@pkmn/data + @pkmn/dex",
     generation,
+    defenderDataGeneration: resolved?.generation || generation,
     attackType: attackType.name,
     defender: defender.name,
     defenderTypes: defender.types,

@@ -35,13 +35,14 @@ Deliver simultaneous-action search, stochastic outcomes, risk-sensitive
 ranking, principal lines, endgame solving, and score decomposition.
 
 Current boundary: bounded one-turn adversarial search remains exhaustive inside
-its declared response model. A live depth-two expectiminimax search now consumes
-deterministic samples of reachable Showdown-compatible next states and fails
-closed at undeclared mechanics. The next gate is complete transition coverage
-for forced replacements, statuses, critical hits, abilities, items, residuals,
-observation-driven belief updates, and Champions-specific divergences.
+its declared response model. The live depth-two expectiminimax search consumes
+deterministic samples of reachable Showdown-compatible states, models forced
+replacement without spending turn depth, and covers the common critical,
+multi-hit, status, contact, entry, item, weather, and residual mechanics needed
+by the supported team and current meta. Its reference verified frontier is
+90.18%; remaining unknown responses and unsupported callbacks fail closed.
 
-Codex strategist 0.6 may research the canonical position with read-only
+Codex strategist 0.7 may research the canonical position with read-only
 mechanics, learnset, meta, matchup, candidate, and damage tools before selecting
 a strategically preferable line from the top twelve verified candidates. Codex
 is not allowed to manufacture future battle states; it receives only states

@@ -20,7 +20,10 @@ from champions_api.multiturn import (  # noqa: E402
 )
 from champions_api.opponent import build_response_model  # noqa: E402
 from champions_api.showdown import ShowdownCalculator  # noqa: E402
-from champions_api.showdown_planner import calculate_turn_damage  # noqa: E402
+from champions_api.showdown_planner import (  # noqa: E402
+    calculate_canonical_damage,
+    calculate_turn_damage,
+)
 from champions_api.service import AppService  # noqa: E402
 from champions_copilot.actions import JointAction, SingleAction  # noqa: E402
 from champions_copilot.beliefs import BeliefState  # noqa: E402
@@ -188,6 +191,96 @@ class MultiTurnTransitionTests(unittest.TestCase):
             )
         )
 
+    def test_forced_replacement_is_reachable_and_does_not_advance_the_turn(self) -> None:
+        state, _ = self.position()
+        outgoing = state.opponent.active[0]
+        incoming = next(
+            pokemon_id
+            for pokemon_id in state.opponent.bench
+            if state.opponent.roster[pokemon_id].name == "Kingambit"
+        )
+        state.opponent.roster[outgoing].hp = 0
+        state.opponent.roster[outgoing].fainted = True
+        planning = PlanningState.initial(state)
+
+        outcomes = VerifiedTurnResolver(
+            self.calculator, MultiTurnConfig(samples_per_response=2)
+        ).resolve_samples(
+            planning,
+            JointAction(()),
+            {
+                "replacement": True,
+                "actions": [
+                    {
+                        "actor": outgoing,
+                        "kind": "switch",
+                        "switch_to": incoming,
+                    }
+                ],
+            },
+        )
+
+        self.assertTrue(planning.replacement_phase)
+        self.assertTrue(outcomes)
+        for outcome in outcomes:
+            next_state = outcome.next_state
+            self.assertIsNone(next_state.uncertainty)
+            self.assertFalse(next_state.replacement_phase)
+            self.assertEqual(state.turn, next_state.battle.turn)
+            self.assertIn(incoming, next_state.battle.opponent.active)
+            self.assertNotIn(outgoing, next_state.battle.opponent.active)
+            self.assertIn("forced replacements resolved", next_state.trace)
+
+    def test_toxic_counter_and_leftovers_persist_across_future_turns(self) -> None:
+        state, _ = self.position()
+        pokemon_id = state.player.active[0]
+        pokemon = state.player.roster[pokemon_id]
+        pokemon.status = "toxic"
+        pokemon.status_counter = 0
+        pokemon.item = "Leftovers"
+        resolver = VerifiedTurnResolver(
+            self.calculator, MultiTurnConfig(samples_per_response=1)
+        )
+        response = {"label": "hold", "probability": 1.0, "actions": []}
+
+        first = resolver.resolve_samples(
+            PlanningState.initial(state), JointAction(()), response
+        )[0].next_state
+        second = resolver.resolve_samples(first, JointAction(()), response)[0].next_state
+
+        self.assertEqual(1, first.battle.player.roster[pokemon_id].status_counter)
+        self.assertEqual(100, first.battle.player.roster[pokemon_id].hp)
+        self.assertEqual(2, second.battle.player.roster[pokemon_id].status_counter)
+        self.assertAlmostEqual(93.75, second.battle.player.roster[pokemon_id].hp)
+
+    def test_canonical_critical_hit_uses_the_pinned_damage_engine(self) -> None:
+        state, _ = self.position()
+        actor = state.player.active[0]
+        target = state.opponent.active[0]
+        normal = calculate_canonical_damage(
+            self.calculator,
+            state,
+            side="player",
+            actor_id=actor,
+            move="Close Combat",
+            target_id=target,
+            target_side="opponent",
+        )
+        critical = calculate_canonical_damage(
+            self.calculator,
+            state,
+            side="player",
+            actor_id=actor,
+            move="Close Combat",
+            target_id=target,
+            target_side="opponent",
+            critical=True,
+        )
+
+        normal_expected = normal["estimate"]["scenarios"][0]["expected_percent"]
+        critical_expected = critical["estimate"]["scenarios"][0]["expected_percent"]
+        self.assertGreater(critical_expected, normal_expected)
+
     def test_depth_two_search_is_live_bounded_and_never_called_exhaustive(self) -> None:
         state, beliefs = self.position()
         response_model = build_response_model(
@@ -236,6 +329,9 @@ class MultiTurnTransitionTests(unittest.TestCase):
             analysis["transition_telemetry"]["sampled_outcomes"], 0
         )
         self.assertIn("promotion_eligible", analysis)
+        self.assertGreaterEqual(analysis["verified_frontier_fraction"], 0.90)
+        self.assertEqual(1.0, analysis["declared_mechanics_resolved_fraction"])
+        self.assertTrue(analysis["promotion_eligible"])
 
     def test_service_carries_completed_multiturn_evidence_into_fallback_output(self) -> None:
         calculator = ShowdownCalculator(ROOT)

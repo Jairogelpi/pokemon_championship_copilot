@@ -89,6 +89,7 @@ def apply_event(state: BattleState, event: BattleEvent) -> BattleState:
         if status not in VALID_STATUSES:
             raise EventValidationError(f"invalid status: {status}")
         pokemon.status = status
+        pokemon.status_counter = 0
 
     elif event.type == "boost_changed":
         side = next_state.side(required(payload, "side"))

@@ -320,9 +320,19 @@ class RiskAwareExpectiminimax:
             branches: list[tuple[float, ChanceOutcome, _NodeValue, float]] = []
             for outcome, outcome_probability in outcomes:
                 self._check_time_budget()
-                continuation = self._state_value(game, outcome.next_state, depth - 1)
+                depth_cost_method = getattr(game, "transition_depth_cost", None)
+                depth_cost = (
+                    int(depth_cost_method(state, action, response, outcome))
+                    if depth_cost_method is not None
+                    else 1
+                )
+                if depth_cost not in {0, 1}:
+                    raise ValueError("transition depth cost must be zero or one")
+                continuation = self._state_value(
+                    game, outcome.next_state, depth - depth_cost
+                )
                 branch_value = float(outcome.immediate_reward) + (
-                    self.config.discount * continuation.value
+                    (self.config.discount**depth_cost) * continuation.value
                 )
                 total += outcome_probability * branch_value
                 branches.append(

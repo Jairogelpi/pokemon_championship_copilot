@@ -447,6 +447,8 @@ def calculate_canonical_damage(
     target_side: str | None = None,
     attacker_profile: dict[str, Any] | None = None,
     defender_profile: dict[str, Any] | None = None,
+    critical: bool = False,
+    hits: int | None = None,
 ) -> dict[str, Any]:
     """Calculate a current-position matchup after verifying Gen 9 learnability.
 
@@ -579,13 +581,19 @@ def calculate_canonical_damage(
                 nature=defender_profile.get("nature"),
                 ability=defender_profile.get("ability"),
             )
+        move_spec: dict[str, Any] = {
+            "name": move_entry["name"],
+            "isCrit": critical,
+        }
+        if hits is not None:
+            move_spec["hits"] = hits
         requests.append(
             {
                 "generation": 9,
                 "scenario": scenario.name,
                 "attacker": attacker,
                 "defender": defender,
-                "move": {"name": move_entry["name"]},
+                "move": move_spec,
                 "field": field,
             }
         )

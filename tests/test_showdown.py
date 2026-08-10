@@ -44,6 +44,17 @@ class ShowdownCalculatorTests(unittest.TestCase):
         matchup = self.calculator.type_matchup("Ground", "Charizard")
         self.assertEqual(0, matchup["multiplier"])
 
+    def test_champions_legacy_species_use_latest_official_species_data(self) -> None:
+        species = self.calculator.lookup("species", "Aerodactyl")["entry"]
+        learnset = self.calculator.learnset("Aerodactyl")
+
+        self.assertEqual(8, species["dataGeneration"])
+        self.assertEqual(130, species["baseStats"]["spe"])
+        self.assertEqual(8, learnset["dataGeneration"])
+        self.assertIn(
+            "Rock Slide", {move["name"] for move in learnset["moves"]}
+        )
+
     def test_batch_isolates_an_invalid_matchup(self) -> None:
         valid = {
             "generation": 9,

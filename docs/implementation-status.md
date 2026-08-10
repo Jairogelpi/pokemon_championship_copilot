@@ -2,7 +2,7 @@
 
 ## Current release boundary
 
-Codex strategist 0.6 is a complete vertical slice. A user can start the server,
+Codex strategist 0.7 is a complete vertical slice. A user can start the server,
 enter a team preview, receive a bring-four and lead baseline, record a match,
 inspect beliefs, request paired actions, correct history, and export a replayable
 log. With OpenAI credentials, Codex makes the final strategic selection from a
@@ -29,8 +29,10 @@ deterministic anchor.
 | Concrete joint responses | Exhaustive inside the bounded model | Moves, targets, Protect, legal switches, other branch, coverage test |
 | Decision ranking | One-turn adversarial search with principal lines | Determinism, explanation, coverage, and service tests |
 | Multi-ply search kernel | Implemented and live-wired at depth two | Iterative-depth, risk-tail, cache, budget, and service integration tests |
-| Sampled battle transition adapter | Implemented compatibility subset | Reachable-roll, switching, speed, Focus Sash, Protect, spread, friendly-fire, and deterministic replay tests |
-| Multi-turn promotion gate | Implemented, fail-closed | Completed-depth, resolved-sample threshold, uncertainty, and fallback assertions |
+| Sampled battle transition adapter | Implemented broad compatibility profile | Replacements, critical/multi-hit damage, status counters, switching, speed, contact, entry, residual, item, spread, and deterministic replay tests |
+| Multi-turn promotion gate | Implemented, fail-closed at 90% | Completed-depth, modeled probability mass, declared-mechanics resolution, uncertainty reasons, and fallback assertions |
+| Reference verified frontier | 90.18% response probability; 100% declared mechanics | Charizard + Garchomp fixture regression |
+| Champions-expanded species | Latest official legacy record under Gen 9 mechanics | Aerodactyl lookup, learnset, speed, and calculation regression |
 | HTTP API | Implemented | Real socket integration tests |
 | Battle console | Implemented | Served by the tested HTTP boundary |
 | Local text interpretation | Implemented | Spanish HP proposal test |
@@ -50,10 +52,9 @@ deterministic anchor.
 - Authoritative Champions divergences from Showdown Gen 9, especially custom
   Mega forms and items. Stock Showdown mechanics are integrated and labelled as
   a compatibility profile rather than silently assumed to be Champions truth.
-- Complete transition coverage for forced replacements, critical hits, every
-  status counter, ability, item, move-specific rule, weather residual, and
-  Champions-specific divergence. Unsupported branches currently terminate as
-  explicit uncertainty leaves.
+- Complete coverage for every rare volatile, move-specific callback, ability,
+  item, independent per-hit critical event, and Champions-specific divergence.
+  Unsupported branches still terminate as named uncertainty leaves.
 - Observation-driven belief updates inside future branches, calibrated set
   priors, wider response sampling, and an endgame solver.
 - Calibrated win-value model and policy weights.

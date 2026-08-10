@@ -196,7 +196,8 @@ function renderRecommendation() {
           <strong>depth ${multi.completed_depth || 0}/${multi.requested_depth || multiSearch.requested_depth || "?"}</strong>
         </div>
         <div class="multiturn-metrics">
-          <span>${(Number(multi.resolved_sample_fraction || 0) * 100).toFixed(0)}% resolved</span>
+          <span>${(Number(multi.verified_frontier_fraction || 0) * 100).toFixed(1)}% verified frontier</span>
+          <span>${(Number(multi.declared_mechanics_resolved_fraction || 0) * 100).toFixed(0)}% declared mechanics</span>
           <span>${multiSearch.nodes_expanded || 0} nodes</span>
           <span>${multi.transition_telemetry?.sampled_outcomes || 0} outcomes</span>
           <span>${multi.promotion_eligible ? "line promoted" : "one-turn line preserved"}</span>

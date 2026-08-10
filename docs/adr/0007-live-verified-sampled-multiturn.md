@@ -26,33 +26,47 @@ same canonical position produces the same search tree. Once sampled, an
 opponent EV, nature, and legal-ability compatibility profile is stored in the
 search state and remains fixed across later turns in that trajectory.
 
-Opponent responses are selected by deterministic systematic quantiles of the
-complete bounded response distribution. Root and future action beams, response
-samples, chance samples, node budget, wall-clock budget, and depth are explicit
-configuration values.
+Opponent responses are selected by deterministic seeded systematic quantiles of
+the complete bounded response distribution. Ten ranked meta move candidates per
+active Pokémon are expanded; category mass with no modeled legal action is
+conditioned back onto the available declared categories while the explicit 5%
+per-Pokémon residual-other prior is preserved. Root and future action beams,
+response samples, chance samples, node budget, wall-clock budget, and depth are
+explicit configuration values.
 
 The adapter resolves a declared compatibility subset:
 
-- simultaneous switches and retargeting to incoming Pokémon;
+- simultaneous switches, retargeting, and forced replacements that do not spend
+  a battle-turn depth unit;
 - priority, recalculated final speed, speed ties, Tailwind, and Trick Room;
-- Protect/Detect chains, Feint, Fake Out, flinching, and Sucker Punch;
+- Protect/Detect chains, Feint, Fake Out, flinching, Sucker Punch, redirection,
+  Wide Guard, and Quick Guard;
 - single, spread, and all-adjacent targets, including friendly fire;
-- exact sampled damage, accuracy, Focus Sash, Sturdy, recoil, and drain;
-- simple status/stat secondaries, paralysis, burn/poison residuals, and field
-  duration decrement.
+- sampled accuracy, critical hits, multi-hit counts and damage rolls, Focus
+  Sash, Sturdy, recoil, drain, contact abilities, and Rocky Helmet;
+- common status/control moves and secondaries, sleep/freeze/toxic counters,
+  Taunt, Yawn, Imprison, phazing, paralysis, and status immunities;
+- weather/terrain setters, Intimidate, common entry/end-turn abilities,
+  burn/poison/weather residuals, recovery/orb items, berries, Life Orb, and
+  field-duration decrement.
 
-Forced replacements, sleep/freeze/toxic counters, complex status or secondary
-effects, sand/hail and known held-item residuals, and other undeclared mechanics
-terminate the branch as an explicit uncertainty state with a risk penalty.
-Unverified contact, switch-in, and end-turn ability effects use the same
-boundary.
+The residual-other response, rare move-specific callbacks, unimplemented
+volatiles, independent per-hit critical events, and undeclared Champions
+divergences terminate the branch as an explicit uncertainty state with a risk
+penalty. Uncertainty reasons are counted individually in transition telemetry.
+Species missing from the native Gen 9 Pokédex use their latest official species
+and learnset record under Gen 9 calculation mechanics, with the source
+generation returned explicitly.
 Legal abilities are sampled uniformly and an unknown held item uses a reachable
 no-item scenario; neither is a calibrated set probability. Beliefs are not
 observation-updated inside sampled futures.
 
 A multi-turn result may reorder the live candidate catalog only when search
-completes at least depth two and the resolved-sample fraction meets the declared
-threshold. Otherwise the exhaustive one-turn recommendation is preserved.
+completes at least depth two and the verified frontier meets 90%. The frontier
+multiplies declared modeled-response probability by the resolved fraction of
+declared mechanic samples; the residual-other branch is not mislabeled as a
+mechanics failure. Otherwise the exhaustive one-turn recommendation is
+preserved.
 
 ## Consequences
 

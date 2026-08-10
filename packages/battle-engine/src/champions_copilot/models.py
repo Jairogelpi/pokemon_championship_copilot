@@ -33,9 +33,11 @@ class PokemonState:
     set_verified: bool = False
     hp: int = 100
     status: str | None = None
+    status_counter: int = 0
     boosts: dict[str, int] = field(default_factory=default_boosts)
     fainted: bool = False
     protected: bool = False
+    volatile_conditions: dict[str, int] = field(default_factory=dict)
     mega_evolved: bool = False
     revealed_moves: list[str] = field(default_factory=list)
 
@@ -44,6 +46,10 @@ class PokemonState:
             raise ValueError("hp must be between 0 and 100")
         if self.status not in VALID_STATUSES:
             raise ValueError(f"invalid status: {self.status}")
+        if self.status_counter < 0:
+            raise ValueError("status_counter cannot be negative")
+        if any(int(turns) < 0 for turns in self.volatile_conditions.values()):
+            raise ValueError("volatile condition counters cannot be negative")
         for stat, stage in self.boosts.items():
             if stat not in STAT_NAMES or not -6 <= stage <= 6:
                 raise ValueError(f"invalid stat stage: {stat}={stage}")

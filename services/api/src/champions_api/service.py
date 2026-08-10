@@ -46,7 +46,7 @@ class AppService:
         calculator = self.calculator.health()
         return {
             "status": "ok" if calculator.get("available") else "degraded",
-            "policy_version": "codex-strategist-0.6",
+            "policy_version": "codex-strategist-0.7",
             "validation_status": (
                 "CODEX_STRATEGIST_AVAILABLE"
                 if self.brain.configured

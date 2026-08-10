@@ -78,7 +78,7 @@ def _actions_for_actor(
 ) -> tuple[list[dict[str, Any]], list[str], list[dict[str, str]]]:
     actor = state.opponent.roster[actor_id]
     belief = beliefs.opponent[actor_id]
-    candidates = meta.move_candidates(actor.name, actor.revealed_moves, limit=6)
+    candidates = meta.move_candidates(actor.name, actor.revealed_moves, limit=10)
     move_rows: list[tuple[dict[str, Any], dict[str, Any]]] = []
     errors: list[dict[str, str]] = []
     for candidate in candidates:
@@ -92,13 +92,32 @@ def _actions_for_actor(
         grouped.setdefault(_move_category(move), []).append((candidate, move))
 
     actions: list[dict[str, Any]] = []
-    unassigned = float(belief.action_categories.get("other", 0.0))
+    residual_mass = float(belief.action_categories.get("other", 0.0))
+    living_bench = [
+        pokemon_id
+        for pokemon_id in state.opponent.bench
+        if not state.opponent.roster[pokemon_id].fainted
+    ]
+    available_category_mass = sum(
+        float(belief.action_categories.get(category, 0.0))
+        for category in ("attack", "protect", "speed_control", "setup_or_control")
+        if grouped.get(category)
+    )
+    if living_bench:
+        available_category_mass += float(
+            belief.action_categories.get("switch", 0.0)
+        )
+    modeled_mass = max(0.0, 1.0 - residual_mass)
     for category in ("attack", "protect", "speed_control", "setup_or_control"):
-        mass = float(belief.action_categories.get(category, 0.0))
         rows = grouped.get(category, [])
         if not rows:
-            unassigned += mass
             continue
+        raw_mass = float(belief.action_categories.get(category, 0.0))
+        mass = (
+            modeled_mass * raw_mass / available_category_mass
+            if available_category_mass > 0
+            else 0.0
+        )
         total_score = sum(float(candidate["score"]) for candidate, _ in rows)
         for candidate, move in rows:
             probability = mass * float(candidate["score"]) / total_score
@@ -106,13 +125,13 @@ def _actions_for_actor(
                 _targeted_actions(state, actor_id, candidate, move, probability)
             )
 
-    living_bench = [
-        pokemon_id
-        for pokemon_id in state.opponent.bench
-        if not state.opponent.roster[pokemon_id].fainted
-    ]
-    switch_mass = float(belief.action_categories.get("switch", 0.0))
     if living_bench:
+        raw_switch_mass = float(belief.action_categories.get("switch", 0.0))
+        switch_mass = (
+            modeled_mass * raw_switch_mass / available_category_mass
+            if available_category_mass > 0
+            else 0.0
+        )
         for pokemon_id in living_bench:
             actions.append(
                 {
@@ -124,16 +143,13 @@ def _actions_for_actor(
                     "probability": switch_mass / len(living_bench),
                 }
             )
-    else:
-        unassigned += switch_mass
-
     actions.append(
         {
             "actor": actor_id,
             "kind": "other",
             "category": "other",
             "source": "residual_unknown",
-            "probability": unassigned,
+            "probability": residual_mass if available_category_mass > 0 else 1.0,
         }
     )
     probabilities = normalize(
@@ -141,13 +157,13 @@ def _actions_for_actor(
     )
     for index, action in enumerate(actions):
         action["probability"] = probabilities[str(index)]
-    damaging = sorted(
-        {
-            str(move["name"])
-            for _, move in move_rows
-            if move.get("category") != "Status"
-        }
-    )
+    damaging: list[str] = []
+    for _, move in move_rows:
+        name = str(move["name"])
+        if move.get("category") != "Status" and name not in damaging:
+            damaging.append(name)
+        if len(damaging) >= 6:
+            break
     return actions, damaging, errors
 
 
@@ -176,7 +192,7 @@ def build_response_model(
     state: BattleState,
     beliefs: BeliefState,
     *,
-    maximum_joint_responses: int = 256,
+    maximum_joint_responses: int = 1024,
 ) -> dict[str, Any]:
     active = [pokemon_id for pokemon_id in state.opponent.active if not state.opponent.roster[pokemon_id].fainted]
     actor_actions: dict[str, list[dict[str, Any]]] = {}
@@ -242,12 +258,18 @@ def build_response_model(
                 ],
             }
         )
+    modeled_response_mass = sum(
+        float(row["probability"])
+        for row in kept
+        if all(action.get("kind") != "other" for action in row.get("actions", []))
+    )
     return {
         "responses": kept,
         "damage_moves": damage_moves,
         "meta": meta.status(),
         "coverage_mass": round(coverage_mass, 6),
         "residual_mass": round(residual_mass, 6),
+        "modeled_response_mass": round(modeled_response_mass, 6),
         "joint_responses_evaluated": len(kept),
         "expanded_legal_joint_responses": len(combinations),
         "explicit_joint_responses": explicit_joint_responses,

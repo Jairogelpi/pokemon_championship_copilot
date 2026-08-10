@@ -407,7 +407,7 @@ class CodexBattleBrain:
         result["assumptions"] = list(
             dict.fromkeys([*baseline["assumptions"], *decision["assumptions"]])
         )
-        result["policy_version"] = "codex-strategist-0.6"
+        result["policy_version"] = "codex-strategist-0.7"
         result["validation_status"] = "CODEX_SELECTED_FROM_VERIFIED_CANDIDATES"
         result["brain"] = {
             **self.status(),

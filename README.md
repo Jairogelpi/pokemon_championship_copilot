@@ -1,8 +1,9 @@
 # Pokémon Champions Battle Copilot
 
 An unofficial, stateful battle assistant for Pokémon Champions doubles. Release
-0.6 connects Codex and the risk-aware search kernel to sampled, reachable future
-battle states grounded in the pinned upstream
+0.7 closes the most important mechanics gaps in the live two-turn search and
+connects Codex to sampled, reachable future battle states grounded in the pinned
+upstream
 [`@smogon/calc`](https://github.com/smogon/damage-calc) engine used by the
 Pokémon Showdown damage calculator.
 
@@ -13,10 +14,11 @@ mechanics, legality, damage, or speed.
 ## North-star goal
 
 Build a decision system whose play quality can be demonstrated at the level of
-a 2,000-point Master player for its supported team and regulation. Release 0.6
-combines exhaustive bounded one-turn evaluation, a verified-sampled two-turn
-search, and tool-grounded Codex selection; it is not yet evidence that this goal
-has been reached.
+a 2,000-point Master player for its supported team and regulation. Release 0.7
+combines exhaustive bounded one-turn evaluation, a mechanics-closed sampled
+two-turn search, and tool-grounded Codex selection. The reference fixture has a
+90.18% verified probability frontier and resolves 100% of declared mechanics;
+this is still not evidence that Master 2000 performance has been reached.
 
 This is not a promise to predict every move. Pokémon contains hidden
 information, simultaneous choices, novel sets, and randomness. The system must
@@ -145,7 +147,7 @@ condition, failure mode, risk, and explanation. Invalid output, refusal,
 timeout, or API failure falls back to the deterministic anchor. Event proposals
 still require explicit confirmation before the engine applies them.
 
-## Implemented in Codex strategist 0.6
+## Implemented in Codex strategist 0.7
 
 - Complete in-memory match lifecycle and six-versus-six team preview.
 - Bring-four and lead baseline for `GMKXPHAS7D`.
@@ -188,9 +190,10 @@ still require explicit confirmation before the engine applies them.
 - Concrete opponent-action generation for both active slots: candidate moves,
   all live single targets, spread targets, Protect, legal bench switches, and
   a residual hidden-response branch.
-- Exhaustive Cartesian enumeration of the bounded response model (192 legal
-  joint replies in the default Charizard + Garchomp fixture), with explicit
-  coverage mass and no discarded probability.
+- Exhaustive Cartesian enumeration of the bounded response model (458 legal
+  joint replies in the default Charizard + Garchomp fixture), using ten ranked
+  meta move candidates per active Pokémon and preserving an explicit 9.82%
+  residual-other probability frontier.
 - One-turn simultaneous adversarial search that evaluates every player paired
   action against every modelled joint reply. Priority, scenario speed, Trick
   Room, faster KO, and Fake Out suppression affect the incoming-risk estimate.
@@ -203,17 +206,23 @@ still require explicit confirmation before the engine applies them.
   EV, nature, and legal-ability profile remains locked throughout the future
   trajectory.
 - Verified sampled turn transitions for simultaneous switching and retargeting,
-  priority and dynamic final speed, Tailwind, Trick Room, Protect and Feint,
-  Fake Out and flinching, Sucker Punch, spread targeting and friendly fire,
-  Focus Sash and Sturdy, recoil and drain, simple secondary effects, burn and
-  poison residual damage, and field-duration decrement.
+  zero-cost forced replacements, priority and dynamic final speed, Tailwind,
+  Trick Room, redirection, guards, Protect and Feint, Fake Out and flinching,
+  Sucker Punch, spread targeting and friendly fire, critical hits, multi-hit
+  counts, Focus Sash and Sturdy, contact effects, recoil and drain, common
+  status/control moves, sleep/freeze/toxic counters, weather, entry abilities,
+  residual abilities/items, berries, Life Orb, and field-duration decrement.
+- Champions-expanded species support: when a species such as Aerodactyl is not
+  present in the native Gen 9 Pokédex, the calculator uses its latest official
+  species and learnset record while retaining Gen 9 battle mechanics and
+  reporting the source generation.
 - Deterministic systematic sampling of the complete opponent-response
   distribution, with node/time budgets, transposition caching, lower-tail risk,
   principal lines, and exact search telemetry.
-- Strict promotion gate: an incomplete depth or too many unresolved mechanics
-  preserves the exhaustive one-turn recommendation. Forced replacement,
-  unsupported effects, complex counters, and unverified residuals become
-  penalized uncertainty leaves instead of fabricated futures.
+- Strict 90% verified-frontier promotion gate: incomplete depth, insufficient
+  modeled response mass, or unresolved declared mechanics preserves the
+  exhaustive one-turn recommendation. The residual-other branch and remaining
+  unsupported effects stay penalized uncertainty leaves.
 - Battle-console evidence for multi-turn depth, sampled outcomes, resolved
   fraction, promotion decision, and principal line, explicitly labelled
   sampled and non-exhaustive.
@@ -257,7 +266,7 @@ See:
 
 ## Status
 
-Codex strategist 0.6 is runnable and tested. When an API key is configured,
+Codex strategist 0.7 is runnable and tested. When an API key is configured,
 Codex owns the final strategic choice inside the verified candidate envelope;
 otherwise the same endpoint degrades to the deterministic anchor. Damage values
 are exact under each displayed Showdown Gen 9 scenario. Pokémon Champions is not a
@@ -300,7 +309,7 @@ POST /api/meta/species            dated Regulation M-B S3 strategy entry
 ```
 
 “100% response coverage” means every joint response generated from the current
-revealed moves, six ranked meta candidates per active Pokémon, legal targets,
+revealed moves, ten ranked meta candidates per active Pokémon, legal targets,
 Protect, switches, and residual-other actions. It does not mean every hidden
 four-move set or every future Champions-specific mechanic is known. The response
 also reports the exact action/response pair count and whether the configured

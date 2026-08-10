@@ -115,7 +115,7 @@ class Recommendation:
     response_model: dict[str, Any]
     candidate_catalog: tuple[RankedAction, ...] = ()
     multi_turn: dict[str, Any] = field(default_factory=dict)
-    policy_version: str = "adversarial-search-0.6"
+    policy_version: str = "adversarial-search-0.7"
     validation_status: str = "ADVERSARIAL_SHOWDOWN_MODEL"
 
     def to_dict(self) -> dict[str, Any]:
