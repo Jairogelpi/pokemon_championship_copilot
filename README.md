@@ -191,6 +191,7 @@ See:
 - [ADR-0001: deterministic core](docs/adr/0001-deterministic-core.md)
 - [ADR-0002: belief-state planning](docs/adr/0002-belief-state-planning.md)
 - [ADR-0003: official Showdown calculator boundary](docs/adr/0003-showdown-calculator-boundary.md)
+- [ADR-0004: verified multi-ply transition boundary](docs/adr/0004-multi-ply-transition-boundary.md)
 
 ## Status
 

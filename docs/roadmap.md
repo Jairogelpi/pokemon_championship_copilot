@@ -34,6 +34,12 @@ Exit: `BELIEF_ENGINE_CALIBRATED`.
 Deliver simultaneous-action search, stochastic outcomes, risk-sensitive
 ranking, principal lines, endgame solving, and score decomposition.
 
+Current boundary: bounded one-turn adversarial search is live and the generic
+multi-ply expectiminimax kernel is implemented. The next gate is a verified
+battle transition adapter that produces legal next states and explicit chance
+branches from resolved joint actions. Expected-damage shortcuts do not satisfy
+this gate.
+
 Exit: `TACTICAL_SEARCH_VERIFIED`.
 
 ## Phase 5: Battle interface and interpretation

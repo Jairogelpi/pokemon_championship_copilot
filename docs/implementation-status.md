@@ -25,6 +25,7 @@ beliefs, request paired actions, correct history, and export a replayable log.
 | Priority and scenario speed | Implemented in one-turn race evaluation | Damage metadata and principal-line output |
 | Concrete joint responses | Exhaustive inside the bounded model | Moves, targets, Protect, legal switches, other branch, coverage test |
 | Decision ranking | One-turn adversarial search with principal lines | Determinism, explanation, coverage, and service tests |
+| Multi-ply search kernel | Implemented, not yet live-wired | Iterative-depth, risk-tail, cache, budget, and fail-closed tests |
 | HTTP API | Implemented | Real socket integration tests |
 | Battle console | Implemented | Served by the tested HTTP boundary |
 | Local text interpretation | Implemented | Spanish HP proposal test |
@@ -40,7 +41,10 @@ beliefs, request paired actions, correct history, and export a replayable log.
 - Authoritative Champions divergences from Showdown Gen 9, especially custom
   Mega forms and items. Stock Showdown mechanics are integrated and labelled as
   a compatibility profile rather than silently assumed to be Champions truth.
-- Multi-ply expectiminimax, beam search, Monte Carlo rollouts, and endgame solver.
+- Verified battle transition adapter connecting live Showdown outcomes to the
+  multi-ply kernel. The kernel itself is implemented; the current live policy
+  remains one-turn.
+- Beam search, Monte Carlo rollouts, and endgame solver.
 - Calibrated win-value model and policy weights.
 - Durable server-side match storage and accounts.
 - Screenshot, continuous capture, OCR, and HP-bar measurement.
