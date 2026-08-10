@@ -6,6 +6,10 @@ from .events import BattleEvent, EventValidationError, apply_event, replay
 from .models import BattleState, FieldState, PokemonState, SideState
 from .search import (
     ChanceOutcome,
+    EndgameCycleDetected,
+    ExhaustiveEndgameResult,
+    ExhaustiveEndgameSolver,
+    ExhaustiveEndgameUnavailable,
     RiskAwareExpectiminimax,
     SearchBudgetExhausted,
     SearchConfig,
@@ -19,7 +23,11 @@ __all__ = [
     "BattleState",
     "BeliefState",
     "ChanceOutcome",
+    "EndgameCycleDetected",
     "EventValidationError",
+    "ExhaustiveEndgameResult",
+    "ExhaustiveEndgameSolver",
+    "ExhaustiveEndgameUnavailable",
     "FieldState",
     "PLAYER_TEAM",
     "PokemonState",

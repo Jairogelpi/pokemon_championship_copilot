@@ -562,6 +562,7 @@ def calculate_canonical_damage(
     defender_profile: dict[str, Any] | None = None,
     critical: bool = False,
     hits: int | None = None,
+    move_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Calculate a current-position matchup after verifying Gen 9 learnability.
 
@@ -700,6 +701,8 @@ def calculate_canonical_damage(
         }
         if hits is not None:
             move_spec["hits"] = hits
+        if move_overrides:
+            move_spec["overrides"] = dict(move_overrides)
         requests.append(
             {
                 "generation": 9,

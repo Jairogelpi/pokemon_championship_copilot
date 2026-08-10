@@ -6,7 +6,7 @@ import os
 import random
 from dataclasses import dataclass, replace
 from itertools import combinations, permutations
-from typing import Any
+from typing import Any, Sequence
 
 from champions_copilot.actions import (
     JointAction,
@@ -16,6 +16,8 @@ from champions_copilot.actions import (
 from champions_copilot.beliefs import BeliefState
 from champions_copilot.decision import (
     Recommendation,
+    RankedAction,
+    ScoreBreakdown,
     base_action_value,
     synergy_value,
 )
@@ -47,6 +49,139 @@ STATUS_IDS = {
 
 class UnexpandedOpponentAction(ValueError):
     """The explicit residual-other hypothesis was selected."""
+
+
+class ExactResolutionUnavailable(RuntimeError):
+    """Raised when one positive-probability branch cannot be resolved exactly."""
+
+
+class ExactBranchBudgetExceeded(ExactResolutionUnavailable):
+    """Raised before an exact chance frontier grows past its declared limit."""
+
+
+@dataclass(frozen=True, slots=True)
+class _ExactBranchRequest(Exception):
+    probabilities: tuple[float, ...]
+    label: str
+
+
+class _ReplayRandom:
+    """Replay discrete RNG decisions and expose the next missing exact branch.
+
+    ``random()`` returns a symbolic uniform variate. Comparisons split its
+    remaining interval, so threshold checks and cumulative weighted choices are
+    enumerated with their exact conditional probability instead of sampled.
+    """
+
+    def __init__(self, prefix: tuple[int, ...]) -> None:
+        self.prefix = prefix
+        self.cursor = 0
+
+    def _choose(self, probabilities: Sequence[float], label: str) -> int:
+        normalized = tuple(float(probability) for probability in probabilities)
+        total = sum(normalized)
+        if total <= 0 or any(probability < 0 for probability in normalized):
+            raise ValueError(f"invalid exact branch probabilities for {label}")
+        normalized = tuple(probability / total for probability in normalized)
+        if self.cursor >= len(self.prefix):
+            raise _ExactBranchRequest(normalized, label)
+        choice = int(self.prefix[self.cursor])
+        self.cursor += 1
+        if choice < 0 or choice >= len(normalized) or normalized[choice] <= 0:
+            raise ValueError(f"invalid replay choice for {label}")
+        return choice
+
+    def random(self) -> _SymbolicUniform:
+        return _SymbolicUniform(self)
+
+    def randrange(self, stop: int) -> int:
+        if stop < 1:
+            raise ValueError("empty randrange for exact replay")
+        if stop == 1:
+            return 0
+        return self._choose((1.0,) * stop, f"randrange({stop})")
+
+    def randint(self, start: int, stop: int) -> int:
+        if stop < start:
+            raise ValueError("empty randint for exact replay")
+        return start + self.randrange(stop - start + 1)
+
+    def choice(self, values: Sequence[Any]) -> Any:
+        if not values:
+            raise ValueError("empty choice for exact replay")
+        return values[self.randrange(len(values))]
+
+
+class _SymbolicUniform:
+    """A replayable uniform interval supporting the comparisons used here."""
+
+    def __init__(
+        self,
+        source: _ReplayRandom,
+        *,
+        lower: float = 0.0,
+        upper: float = 1.0,
+    ) -> None:
+        self.source = source
+        self.lower = float(lower)
+        self.upper = float(upper)
+
+    def __mul__(self, factor: float) -> _SymbolicUniform:
+        factor = float(factor)
+        if factor < 0:
+            raise ValueError("negative symbolic random scaling is unsupported")
+        return _SymbolicUniform(
+            self.source,
+            lower=self.lower * factor,
+            upper=self.upper * factor,
+        )
+
+    __rmul__ = __mul__
+
+    def _compare(self, threshold: float, *, true_above: bool) -> bool:
+        threshold = float(threshold)
+        width = self.upper - self.lower
+        if width <= 0:
+            return self.lower > threshold if true_above else self.lower <= threshold
+        if true_above:
+            true_probability = max(
+                0.0, min(1.0, (self.upper - threshold) / width)
+            )
+        else:
+            true_probability = max(
+                0.0, min(1.0, (threshold - self.lower) / width)
+            )
+        if true_probability <= 1e-15:
+            result = False
+        elif true_probability >= 1 - 1e-15:
+            result = True
+        else:
+            result = self.source._choose(
+                (true_probability, 1.0 - true_probability),
+                f"uniform {'>' if true_above else '<='} {threshold:g}",
+            ) == 0
+        if true_above:
+            if result:
+                self.lower = max(self.lower, threshold)
+            else:
+                self.upper = min(self.upper, threshold)
+        elif result:
+            self.upper = min(self.upper, threshold)
+        else:
+            self.lower = max(self.lower, threshold)
+        return result
+
+    def __lt__(self, threshold: float) -> bool:
+        return self._compare(threshold, true_above=False)
+
+    def __le__(self, threshold: float) -> bool:
+        return self._compare(threshold, true_above=False)
+
+    def __gt__(self, threshold: float) -> bool:
+        return self._compare(threshold, true_above=True)
+
+    def __ge__(self, threshold: float) -> bool:
+        return self._compare(threshold, true_above=True)
 
 HIDDEN_SET_PROFILES = (
     {"name": "no_bulk", "weight": 0.15, "evs": {}, "nature": None},
@@ -140,6 +275,11 @@ class MultiTurnConfig:
     time_budget_ms: int = 8_000
     uncertainty_penalty: float = 14.0
     minimum_verified_frontier_fraction: float = 0.90
+    exhaustive_endgame_enabled: bool = True
+    endgame_max_states: int = 100_000
+    endgame_max_chance_branches: int = 1_000_000
+    endgame_max_paths_per_transition: int = 250_000
+    endgame_time_budget_ms: int = 30_000
 
     def __post_init__(self) -> None:
         positive_fields = {
@@ -150,6 +290,10 @@ class MultiTurnConfig:
             "samples_per_response": self.samples_per_response,
             "node_budget": self.node_budget,
             "time_budget_ms": self.time_budget_ms,
+            "endgame_max_states": self.endgame_max_states,
+            "endgame_max_chance_branches": self.endgame_max_chance_branches,
+            "endgame_max_paths_per_transition": self.endgame_max_paths_per_transition,
+            "endgame_time_budget_ms": self.endgame_time_budget_ms,
         }
         invalid = [name for name, value in positive_fields.items() if value < 1]
         if invalid:
@@ -195,6 +339,29 @@ class MultiTurnConfig:
                         )
                     ),
                 ),
+            ),
+            exhaustive_endgame_enabled=os.environ.get(
+                "EXHAUSTIVE_ENDGAME_ENABLED", "1"
+            ).strip().lower()
+            not in {"0", "false", "no", "off"},
+            endgame_max_states=max(
+                1, int(os.environ.get("ENDGAME_MAX_STATES", "100000"))
+            ),
+            endgame_max_chance_branches=max(
+                1,
+                int(os.environ.get("ENDGAME_MAX_CHANCE_BRANCHES", "1000000")),
+            ),
+            endgame_max_paths_per_transition=max(
+                1,
+                int(
+                    os.environ.get(
+                        "ENDGAME_MAX_PATHS_PER_TRANSITION", "250000"
+                    )
+                ),
+            ),
+            endgame_time_budget_ms=max(
+                100,
+                int(os.environ.get("ENDGAME_TIME_BUDGET_MS", "30000")),
             ),
         )
 
@@ -278,7 +445,95 @@ class VerifiedTurnResolver:
             "hidden_profiles_sampled": 0,
             "mega_evolutions_resolved": 0,
             "independent_per_hit_critical_checks": 0,
+            "exact_resolutions": 0,
+            "exact_completed_paths": 0,
+            "exact_unique_outcomes": 0,
         }
+
+    def resolve_exact(
+        self,
+        state: PlanningState,
+        action: JointAction,
+        response: dict[str, Any],
+        *,
+        max_paths: int = 250_000,
+    ) -> list[ChanceOutcome]:
+        """Enumerate every stochastic path supported by this resolver.
+
+        The method replays the turn for each exact discrete choice. A single
+        unresolved positive-probability path invalidates the whole result.
+        """
+
+        if max_paths < 1:
+            raise ValueError("max_paths must be positive")
+        if response.get("residual") or any(
+            reply.get("kind") == "other" for reply in response.get("actions", [])
+        ):
+            raise ExactResolutionUnavailable("unexpanded_opponent_response")
+
+        frontier: list[tuple[tuple[int, ...], float]] = [((), 1.0)]
+        outcomes: dict[str, tuple[PlanningState, float, float]] = {}
+        completed_paths = 0
+        expanded_prefixes = 0
+        while frontier:
+            prefix, path_probability = frontier.pop()
+            rng = _ReplayRandom(prefix)
+            try:
+                next_state = self._resolve_one(state, action, response, rng)
+            except _ExactBranchRequest as branch:
+                expanded_prefixes += 1
+                if expanded_prefixes + completed_paths + len(frontier) >= max_paths:
+                    raise ExactBranchBudgetExceeded(
+                        f"exact chance frontier exceeded {max_paths} paths at {branch.label}"
+                    )
+                for choice in range(len(branch.probabilities) - 1, -1, -1):
+                    probability = branch.probabilities[choice]
+                    if probability > 0:
+                        frontier.append(
+                            ((*prefix, choice), path_probability * probability)
+                        )
+                continue
+
+            completed_paths += 1
+            if completed_paths + len(frontier) > max_paths:
+                raise ExactBranchBudgetExceeded(
+                    f"exact chance frontier exceeded {max_paths} completed paths"
+                )
+            if next_state.uncertainty:
+                raise ExactResolutionUnavailable(next_state.uncertainty)
+            reward = round(
+                material_value(next_state.battle) - material_value(state.battle), 6
+            )
+            key = next_state.key()
+            if key in outcomes:
+                previous, probability, previous_reward = outcomes[key]
+                outcomes[key] = (
+                    previous,
+                    probability + path_probability,
+                    previous_reward,
+                )
+            else:
+                outcomes[key] = (next_state, path_probability, reward)
+
+        total_probability = sum(probability for _, probability, _ in outcomes.values())
+        if abs(total_probability - 1.0) > 1e-9:
+            raise ExactResolutionUnavailable(
+                f"exact chance mass was {total_probability:.12f}, expected 1"
+            )
+        self.telemetry["exact_resolutions"] += 1
+        self.telemetry["exact_completed_paths"] += completed_paths
+        self.telemetry["exact_unique_outcomes"] += len(outcomes)
+        return [
+            ChanceOutcome(
+                id=f"exact-{index + 1}:{outcome.trace[-1] if outcome.trace else 'turn'}",
+                probability=probability,
+                next_state=outcome,
+                immediate_reward=reward,
+            )
+            for index, (outcome, probability, reward) in enumerate(
+                sorted(outcomes.values(), key=lambda row: row[0].key())
+            )
+        ]
 
     def resolve_samples(
         self,
@@ -1227,9 +1482,36 @@ class VerifiedTurnResolver:
                 )["hits"]
             else:
                 hits = rng.randint(low, high)
+        skip_multi_hit_accuracy = False
+        if hits and hits > 1 and move_data.get("multiaccuracy"):
+            if attacker_item == "Loaded Dice":
+                if hits == 10:
+                    hits = rng.randint(4, 10)
+            else:
+                accuracy_value = move_data.get("accuracy")
+                per_hit_accuracy = (
+                    1.0
+                    if accuracy_value is True
+                    else max(0.0, min(1.0, float(accuracy_value or 100) / 100))
+                )
+                landed = 0
+                for _ in range(hits):
+                    if rng.random() > per_hit_accuracy:
+                        break
+                    landed += 1
+                if landed == 0:
+                    return (
+                        0.0,
+                        False,
+                        f"base:{move_data.get('id', move.lower())}:0-hits",
+                        0.0,
+                        self._max_hp(battle, target_side, target, hidden_profiles),
+                    )
+                hits = landed
+                skip_multi_hit_accuracy = True
         if hits and hits > 1:
             move_id = str(move_data.get("id", "")).lower()
-            if move_id in {"beatup", "dragondarts", "populationbomb", "tripleaxel", "triplekick"}:
+            if move_id in {"beatup", "dragondarts"}:
                 raise ValueError(f"per-hit callback is not verified for {move}")
             criticals = [critical]
             for _ in range(hits - 1):
@@ -1244,6 +1526,23 @@ class VerifiedTurnResolver:
                     )
                 )
             self.telemetry["independent_per_hit_critical_checks"] += hits
+            if move_id in {"tripleaxel", "triplekick"}:
+                return self._sample_escalating_multi_hit_damage(
+                    battle=battle,
+                    side=side,
+                    actor=actor,
+                    move=move,
+                    target_side=target_side,
+                    target=target,
+                    rng=rng,
+                    attacker_profile=attacker_profile,
+                    defender_profile=defender_profile,
+                    attacker_profile_key=attacker_profile_key,
+                    defender_profile_key=defender_profile_key,
+                    criticals=criticals,
+                    base_power=20 if move_id == "tripleaxel" else 10,
+                    skip_accuracy=skip_multi_hit_accuracy,
+                )
             return self._sample_equal_power_multi_hit_damage(
                 battle=battle,
                 side=side,
@@ -1257,6 +1556,7 @@ class VerifiedTurnResolver:
                 attacker_profile_key=attacker_profile_key,
                 defender_profile_key=defender_profile_key,
                 criticals=criticals,
+                skip_accuracy=skip_multi_hit_accuracy,
             )
         key = (
             self._structural_key(battle),
@@ -1300,7 +1600,7 @@ class VerifiedTurnResolver:
         if hits and hits > 1:
             scenario_name += f":{hits}-hits"
         accuracy = float(scenario.get("base_accuracy_probability", 1.0))
-        if rng.random() > accuracy:
+        if not skip_multi_hit_accuracy and rng.random() > accuracy:
             return 0.0, False, scenario_name, 0.0, int(
                 scenario["defender_max_hp"]
             )
@@ -1328,6 +1628,7 @@ class VerifiedTurnResolver:
         attacker_profile_key: str,
         defender_profile_key: str,
         criticals: list[bool],
+        skip_accuracy: bool = False,
     ) -> tuple[float, bool, str, float, int]:
         results: dict[bool, dict[str, Any]] = {}
         for critical in sorted(set(criticals)):
@@ -1371,7 +1672,7 @@ class VerifiedTurnResolver:
         )
         scenario_name = str(first_scenario["name"])
         accuracy = float(first_scenario.get("base_accuracy_probability", 1.0))
-        if rng.random() > accuracy:
+        if not skip_accuracy and rng.random() > accuracy:
             return 0.0, False, f"{scenario_name}:{len(criticals)}-hits", 0.0, int(
                 first_scenario["defender_max_hp"]
             )
@@ -1398,6 +1699,105 @@ class VerifiedTurnResolver:
             percent,
             True,
             f"{scenario_name}:{len(criticals)}-hits:{critical_hits}-critical-hits",
+            damage_units,
+            int(first_scenario["defender_max_hp"]),
+        )
+
+    def _sample_escalating_multi_hit_damage(
+        self,
+        *,
+        battle: BattleState,
+        side: str,
+        actor: str,
+        move: str,
+        target_side: str,
+        target: str,
+        rng: random.Random,
+        attacker_profile: dict[str, Any] | None,
+        defender_profile: dict[str, Any] | None,
+        attacker_profile_key: str,
+        defender_profile_key: str,
+        criticals: list[bool],
+        base_power: int,
+        skip_accuracy: bool,
+    ) -> tuple[float, bool, str, float, int]:
+        results: dict[tuple[int, bool], dict[str, Any]] = {}
+        for hit, critical in enumerate(criticals, start=1):
+            result_key = (hit, critical)
+            key = (
+                self._structural_key(battle),
+                side,
+                actor,
+                move.lower(),
+                target_side,
+                target,
+                attacker_profile_key,
+                defender_profile_key,
+                "critical" if critical else "normal",
+                f"escalating-hit-{hit}",
+            )
+            if key in self._damage_cache:
+                self.telemetry["damage_cache_hits"] += 1
+                result = self._damage_cache[key]
+            else:
+                result = calculate_canonical_damage(
+                    self.calculator,
+                    battle,
+                    side=side,
+                    actor_id=actor,
+                    move=move,
+                    target_id=target,
+                    target_side=target_side,
+                    attacker_profile=attacker_profile,
+                    defender_profile=defender_profile,
+                    critical=critical,
+                    hits=1,
+                    move_overrides={
+                        "basePower": base_power * hit,
+                        "multihit": None,
+                        "multiaccuracy": False,
+                    },
+                )
+                self._damage_cache[key] = result
+            if not result.get("damage_applicable"):
+                raise ValueError("status move reached escalating multi-hit sampler")
+            results[result_key] = result
+
+        first_estimate = results[(1, criticals[0])]["estimate"]
+        first_scenario = self._weighted_choice(
+            list(first_estimate["scenarios"]), "weight", rng
+        )
+        accuracy = float(first_scenario.get("base_accuracy_probability", 1.0))
+        if not skip_accuracy and rng.random() > accuracy:
+            return (
+                0.0,
+                False,
+                f"{first_scenario['name']}:0-hits",
+                0.0,
+                int(first_scenario["defender_max_hp"]),
+            )
+        percent = 0.0
+        damage_units = 0.0
+        for hit, critical in enumerate(criticals, start=1):
+            estimate = results[(hit, critical)]["estimate"]
+            scenario = next(
+                (
+                    row
+                    for row in estimate["scenarios"]
+                    if row["name"] == first_scenario["name"]
+                ),
+                estimate["scenarios"][0],
+            )
+            roll = self._weighted_choice(
+                list(scenario["rolls_percent"]), "weight", rng
+            )
+            percent += float(roll["percent"])
+            damage_units += float(roll["damage"])
+        return (
+            percent,
+            True,
+            f"{first_scenario['name']}:{len(criticals)}-hits:"
+            f"{sum(criticals)}-critical-hits:escalating-power",
             damage_units,
             int(first_scenario["defender_max_hp"]),
         )
@@ -2776,6 +3176,13 @@ class MultiTurnPlanner:
         return {
             "enabled": self.enabled,
             "mode": "verified_transition_deterministic_sampling",
+            "exhaustive_endgame_enabled": self.config.exhaustive_endgame_enabled,
+            "endgame_limits": {
+                "states": self.config.endgame_max_states,
+                "chance_branches": self.config.endgame_max_chance_branches,
+                "paths_per_transition": self.config.endgame_max_paths_per_transition,
+                "time_budget_ms": self.config.endgame_time_budget_ms,
+            },
             "requested_depth": self.config.depth,
             "root_action_limit": self.config.root_action_limit,
             "future_action_limit": self.config.future_action_limit,
@@ -2788,6 +3195,135 @@ class MultiTurnPlanner:
             ),
         }
 
+    @staticmethod
+    def _endgame_ranked_action(
+        action: JointAction,
+        label: str,
+        row: dict[str, Any],
+    ) -> RankedAction:
+        loss_probability = float(row["loss_probability"])
+        win_probability = float(row["win_probability"])
+        expected = float(row["expected_utility"])
+        return RankedAction(
+            action=action,
+            label=label,
+            score=ScoreBreakdown(
+                expected_utility=round(expected, 6),
+                lower_tail_utility=round(expected, 6),
+                strategic_value=0.0,
+                information_value=0.0,
+                catastrophic_loss_probability=round(loss_probability, 9),
+                expected_damage_percent=0.0,
+                knockout_probability=round(win_probability, 9),
+                incoming_damage_percent=0.0,
+                incoming_knockout_probability=round(loss_probability, 9),
+                final_score=round(expected, 6),
+            ),
+            covers=(
+                "every supported stochastic branch to a terminal state",
+                f"adversarial reply: {row['worst_response']}",
+            ),
+            principal_lines=tuple(row.get("principal_line", ())),
+        )
+
+    def _try_exhaustive_endgame(
+        self,
+        state: BattleState,
+        recommendation: Recommendation,
+    ) -> tuple[Recommendation | None, dict[str, Any]]:
+        if not self.config.exhaustive_endgame_enabled:
+            return None, {"status": "disabled", "exhaustive_claim": False}
+        from .endgame import solve_current_endgame
+
+        try:
+            eligibility, result, game, failure = solve_current_endgame(
+                state=state,
+                calculator=self.calculator,
+                regulation=self.meta.regulation,
+                config=self.config,
+                max_states=self.config.endgame_max_states,
+                max_chance_branches=self.config.endgame_max_chance_branches,
+                max_paths_per_transition=(
+                    self.config.endgame_max_paths_per_transition
+                ),
+                time_budget_ms=self.config.endgame_time_budget_ms,
+            )
+        except (
+            ShowdownCalculationError,
+            ShowdownUnavailable,
+            KeyError,
+            TypeError,
+            ValueError,
+            RuntimeError,
+        ) as exc:
+            return None, {
+                "status": "error",
+                "exhaustive_claim": False,
+                "reason": type(exc).__name__,
+            }
+        eligibility_payload = eligibility.to_dict()
+        if result is None:
+            return None, {
+                "status": "unavailable" if eligibility.eligible else "ineligible",
+                "exhaustive_claim": False,
+                "eligibility": eligibility_payload,
+                **({"reason": failure} if failure else {}),
+            }
+        assert game is not None
+        solved = result.to_dict()
+        rows = [solved["best"], *solved["alternatives"]]
+        exact_ranked: list[RankedAction] = []
+        for row in rows:
+            label = str(row["action"])
+            action = game.root_actions.get(label)
+            if action is None:
+                return None, {
+                    "status": "error",
+                    "exhaustive_claim": False,
+                    "eligibility": eligibility_payload,
+                    "reason": "root_action_mapping_missing",
+                }
+            exact_ranked.append(self._endgame_ranked_action(action, label, row))
+        analysis = {
+            **self.status(),
+            "status": "solved",
+            "mode": "exhaustive_terminal_expectiminimax",
+            "eligibility": eligibility_payload,
+            **solved,
+            "transition_telemetry": game.resolver.telemetry,
+        }
+        primary = exact_ranked[0]
+        risk = (
+            "high"
+            if primary.score.catastrophic_loss_probability > 0.2
+            else "medium"
+            if primary.score.catastrophic_loss_probability > 0.08
+            else "low"
+        )
+        return (
+            replace(
+                recommendation,
+                primary=primary,
+                alternatives=tuple(exact_ranked[1:4]),
+                candidate_catalog=tuple(exact_ranked[:12]),
+                rationale=(
+                    "The current closed Champions endgame was solved to terminal states "
+                    "against every legal opposing reply. "
+                    + recommendation.rationale
+                ),
+                risk=risk,
+                assumptions=(
+                    *recommendation.assumptions,
+                    "The exhaustive claim applies only to the fully observed, active-only "
+                    "endgame reported in multi_turn.eligibility.",
+                ),
+                multi_turn=analysis,
+                policy_version="current-champions-endgame-tablebase-0.9",
+                validation_status="EXHAUSTIVE_CURRENT_CHAMPIONS_ENDGAME",
+            ),
+            analysis,
+        )
+
     def plan(
         self,
         *,
@@ -2796,8 +3332,20 @@ class MultiTurnPlanner:
         recommendation: Recommendation,
         response_model: dict[str, Any],
     ) -> Recommendation:
+        exact_recommendation, endgame_analysis = self._try_exhaustive_endgame(
+            state, recommendation
+        )
+        if exact_recommendation is not None:
+            return exact_recommendation
         if not self.enabled:
-            return replace(recommendation, multi_turn={**self.status(), "status": "disabled"})
+            return replace(
+                recommendation,
+                multi_turn={
+                    **self.status(),
+                    "status": "disabled",
+                    "endgame_tablebase": endgame_analysis,
+                },
+            )
         initial = PlanningState.initial(state)
         try:
             game = VerifiedBattleGame(
@@ -2838,6 +3386,7 @@ class MultiTurnPlanner:
                     "status": "fallback",
                     "reason": type(exc).__name__,
                     "completed_depth": 0,
+                    "endgame_tablebase": endgame_analysis,
                 },
             )
 
@@ -2865,13 +3414,16 @@ class MultiTurnPlanner:
             "search": result["stats"],
             "transition_telemetry": game.resolver.telemetry,
             "beam_telemetry": game.telemetry,
+            "endgame_tablebase": endgame_analysis,
             "unsupported_boundaries": [
                 "the explicit residual-other opponent hypothesis remains an uncertainty leaf",
                 "unimplemented volatile, move-specific, item, and ability effects remain "
                 "named uncertainty leaves",
                 "equal-power multi-hit moves sample critical hits independently per hit; "
-                "Beat Up, Dragon Darts, Population Bomb, Triple Axel, and Triple Kick "
-                "remain named per-hit callback boundaries",
+                "Population Bomb, Triple Axel, and Triple Kick also resolve their per-hit "
+                "accuracy and power rules; Beat Up and Dragon Darts remain named team/target "
+                "callback boundaries, while contact and secondary reactions are still "
+                "aggregated after multi-hit damage",
                 "legacy Champions species use their latest official species and learnset data "
                 "inside the generation-9 calculator",
                 "opponent responses use deterministic seeded systematic samples of the full "

@@ -227,6 +227,7 @@ function compactMove(move) {
     target: move.target,
     flags: Object.keys(move.flags || {}).sort(),
     multihit: move.multihit || null,
+    multiaccuracy: Boolean(move.multiaccuracy),
     critRatio: move.critRatio || 0,
     willCrit: Boolean(move.willCrit),
     recoil: move.recoil || null,

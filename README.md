@@ -1,7 +1,8 @@
 # Pokémon Champions Battle Copilot
 
 An unofficial, stateful battle assistant for Pokémon Champions doubles. Release
-0.8 adds a fail-closed, current-format boundary: the engine only accepts the
+0.9 adds a fail-closed terminal endgame tablebase on top of the 0.8
+current-format boundary: the engine only accepts the
 Pokémon, moves, held items, Mega Stones, and learnsets legal in Regulation M-B,
 Ranked Season M-5. It connects Codex to sampled, reachable future battle states
 grounded in the pinned upstream
@@ -15,9 +16,10 @@ mechanics, legality, damage, or speed.
 ## North-star goal
 
 Build a decision system whose play quality can be demonstrated at the level of
-a 2,000-point Master player for its supported team and regulation. Release 0.8
+a 2,000-point Master player for its supported team and regulation. Release 0.9
 combines exhaustive bounded one-turn evaluation, a mechanics-closed sampled
-two-turn search, and tool-grounded Codex selection. The reference fixture has a
+two-turn search, a strict exhaustive solver for eligible closed endgames, and
+tool-grounded Codex selection. The reference fixture has a
 90.18% verified probability frontier and resolves 100% of declared mechanics;
 this is still not evidence that Master 2000 performance has been reached.
 
@@ -153,7 +155,7 @@ condition, failure mode, risk, and explanation. Invalid output, refusal,
 timeout, or API failure falls back to the deterministic anchor. Event proposals
 still require explicit confirmation before the engine applies them.
 
-## Implemented in Codex strategist 0.8
+## Implemented through endgame tablebase 0.9
 
 - Complete in-memory match lifecycle and six-versus-six team preview.
 - Bring-four and lead baseline for `GMKXPHAS7D`.
@@ -215,11 +217,21 @@ still require explicit confirmation before the engine applies them.
   is never written into state as if it were an actual roll, and a sampled hidden
   EV, nature, and legal-ability profile remains locked throughout the future
   trajectory.
+- Exact replay enumeration for every supported stochastic decision in a turn:
+  speed ties, accuracy, criticals, damage rolls, hit counts, statuses, and
+  randomized replacements retain explicit probability mass.
+- Fail-closed terminal expectiminimax for fully observed, active-only current
+  Champions endgames. It enumerates every legal paired player action, treats
+  every opposing paired reply adversarially, closes all supported chance paths
+  to win/draw/loss, caches transpositions, and rejects cycles or resource
+  cutoffs instead of claiming a partial tablebase.
 - Verified sampled turn transitions for simultaneous switching and retargeting,
   zero-cost forced replacements, priority and dynamic final speed, Tailwind,
   Trick Room, redirection, guards, Protect and Feint, Fake Out and flinching,
   Sucker Punch, spread targeting and friendly fire, critical hits, multi-hit
-  counts, Focus Sash and Sturdy, contact effects, recoil and drain, common
+  counts, per-hit critical checks, Triple Axel/Triple Kick escalating power,
+  Population Bomb/Loaded Dice accuracy and hit-count rules, Focus Sash and
+  Sturdy, contact effects, recoil and drain, common
   status/control moves, sleep/freeze/toxic counters, weather, entry abilities,
   residual abilities/items, berries, Life Orb, and field-duration decrement.
 - Champions-expanded species support: when a species such as Aerodactyl is not
@@ -273,17 +285,21 @@ See:
 - [ADR-0005: Codex strategic selector boundary](docs/adr/0005-codex-strategic-selector.md)
 - [ADR-0006: tool-grounded battle research](docs/adr/0006-tool-grounded-battle-research.md)
 - [ADR-0007: live verified-sampled multi-turn search](docs/adr/0007-live-verified-sampled-multiturn.md)
+- [ADR-0008: fail-closed exhaustive endgame tablebase](docs/adr/0008-exhaustive-endgame-tablebase.md)
 
 ## Status
 
-Codex strategist 0.8 is runnable and tested. When an API key is configured,
+Codex strategist 0.8 plus endgame tablebase 0.9 is runnable and tested. When an API key is configured,
 Codex owns the final strategic choice inside the verified candidate envelope;
 otherwise the same endpoint degrades to the deterministic anchor. Damage values
 are exact under each displayed calculator scenario, including pinned Champions
 Mega stat/type/ability overrides. Rare unpublished Champions effect constants
-and callback-changing multi-hit moves remain explicit gaps; equal-power
-multi-hit moves already roll critical hits independently per hit. Unsupported
-cases are never silently treated as exact.
+and callback-changing multi-hit state effects remain explicit gaps. Equal-power
+multi-hit moves roll critical hits independently; Triple Axel, Triple Kick, and
+Population Bomb now apply their per-hit accuracy/power rules. Beat Up team
+callbacks, Dragon Darts target allocation, and per-hit contact/secondary state
+reactions remain fail-closed for exhaustive solving. Unsupported cases are never
+silently treated as exact.
 
 This is not yet a validated 2,000-point Master policy. That claim still requires
 the frozen benchmark and independent evaluation described in the evaluation

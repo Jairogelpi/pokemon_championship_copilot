@@ -112,6 +112,108 @@ class MultiTurnTransitionTests(unittest.TestCase):
             )
         )
 
+    def test_exact_turn_enumerates_protect_success_and_failure_probability(self) -> None:
+        state, _ = self.position()
+        for pokemon_id in state.opponent.active:
+            pokemon = state.opponent.roster[pokemon_id]
+            abilities = self.calculator.lookup("species", pokemon.name)["entry"][
+                "abilities"
+            ]
+            state.opponent.known_facts[pokemon_id] = {
+                "evs": dict(pokemon.evs),
+                "nature": pokemon.nature,
+                "ability": pokemon.ability or next(iter(abilities.values())),
+            }
+        actor = state.player.active[0]
+        planning = PlanningState.initial(state)
+        planning = planning.__class__(
+            battle=planning.battle,
+            uncertainty=planning.uncertainty,
+            trace=planning.trace,
+            protect_chain=((f"player:{actor}", 1),),
+            active_turns=planning.active_turns,
+            hidden_profiles=planning.hidden_profiles,
+            replacement_phase=planning.replacement_phase,
+        )
+        outcomes = VerifiedTurnResolver(
+            self.calculator,
+            MultiTurnConfig(samples_per_response=1),
+        ).resolve_exact(
+            planning,
+            JointAction((SingleAction(actor, "move", "Protect", actor),)),
+            {"label": "hold", "probability": 1.0, "actions": []},
+        )
+
+        self.assertEqual(2, len(outcomes))
+        self.assertAlmostEqual(1.0, sum(row.probability for row in outcomes))
+        successful = next(
+            row for row in outcomes if f"{state.player.roster[actor].name} protected" in row.next_state.trace
+        )
+        failed = next(
+            row for row in outcomes if "Protect failed" in " | ".join(row.next_state.trace)
+        )
+        self.assertAlmostEqual(1 / 3, successful.probability)
+        self.assertAlmostEqual(2 / 3, failed.probability)
+
+    def test_closed_current_endgame_promotes_terminal_tablebase_result(self) -> None:
+        state, _ = self.position()
+        player_id = "sneasler"
+        opponent_id = "garchomp"
+        for side_name, survivor in (("player", player_id), ("opponent", opponent_id)):
+            side = state.side(side_name)
+            for pokemon in side.roster.values():
+                pokemon.fainted = pokemon.id != survivor
+                pokemon.hp = 0 if pokemon.fainted else 1
+            side.active = [survivor]
+            side.bench = []
+            side.selected = [survivor]
+        player = state.player.roster[player_id]
+        player.moves = ("Close Combat",)
+        player.set_verified = True
+        opponent = state.opponent.roster[opponent_id]
+        opponent.moves = ("Dragon Claw",)
+        opponent.revealed_moves = ["Dragon Claw"]
+        opponent.set_verified = True
+        opponent.item = None
+        opponent.ability = "Sand Veil"
+        opponent.nature = "Jolly"
+        opponent.evs = {"atk": 252, "spe": 252, "spd": 4}
+        opponent.ivs = {stat: 31 for stat in ("hp", "atk", "def", "spa", "spd", "spe")}
+        state.opponent.known_facts[opponent_id] = {
+            "item": None,
+            "ability": opponent.ability,
+            "nature": opponent.nature,
+            "evs": dict(opponent.evs),
+            "ivs": dict(opponent.ivs),
+        }
+        beliefs = BeliefState.from_battle(state)
+        baseline = recommend_actions(state, beliefs)
+
+        solved = MultiTurnPlanner(
+            self.calculator,
+            self.meta,
+            MultiTurnConfig(
+                enabled=False,
+                endgame_time_budget_ms=5_000,
+                endgame_max_states=1_000,
+                endgame_max_chance_branches=10_000,
+                endgame_max_paths_per_transition=10_000,
+            ),
+        ).plan(
+            state=state,
+            beliefs=beliefs,
+            recommendation=baseline,
+            response_model={"responses": []},
+        )
+
+        self.assertEqual(
+            "EXHAUSTIVE_CURRENT_CHAMPIONS_ENDGAME", solved.validation_status
+        )
+        self.assertTrue(solved.multi_turn["exhaustive_claim"])
+        self.assertEqual("solved", solved.multi_turn["status"])
+        self.assertEqual(1.0, solved.multi_turn["best"]["win_probability"])
+        self.assertIn("Close Combat", solved.primary.label)
+
     def test_mega_branch_applies_current_form_stats_ability_and_weather(self) -> None:
         state = create_match(
             OPPONENT,
@@ -224,6 +326,104 @@ class MultiTurnTransitionTests(unittest.TestCase):
         )
         resolver.resolve_samples(PlanningState.initial(state), action, response)
         self.assertEqual(2, resolver.telemetry["independent_per_hit_critical_checks"])
+
+    def test_triple_axel_uses_per_hit_accuracy_criticals_and_escalating_power(self) -> None:
+        state = create_match(
+            OPPONENT,
+            ["froslass", "sneasler", "basculegion", "dragonite"],
+            ["froslass", "sneasler"],
+            match_id="triple-axel-fixture",
+        )
+        actor, partner = state.player.active
+        target = state.opponent.active[0]
+        action = JointAction(
+            (
+                SingleAction(actor, "move", "Triple Axel", target),
+                SingleAction(partner, "move", "Protect", partner),
+            )
+        )
+        resolver = VerifiedTurnResolver(
+            self.calculator, MultiTurnConfig(samples_per_response=24)
+        )
+        outcomes = resolver.resolve_samples(
+            PlanningState.initial(state),
+            action,
+            {"label": "hold", "probability": 1.0, "actions": []},
+        )
+
+        self.assertTrue(outcomes)
+        self.assertTrue(all(row.next_state.uncertainty is None for row in outcomes))
+        traces = [" | ".join(row.next_state.trace) for row in outcomes]
+        self.assertTrue(any("escalating-power" in trace for trace in traces))
+        self.assertGreaterEqual(
+            resolver.telemetry["independent_per_hit_critical_checks"], 24
+        )
+
+    def test_showdown_lookup_exposes_multiaccuracy_mechanics(self) -> None:
+        triple_axel = self.calculator.lookup("move", "Triple Axel")["entry"]
+        population_bomb = self.calculator.lookup("move", "Population Bomb")["entry"]
+
+        self.assertTrue(triple_axel["multiaccuracy"])
+        self.assertEqual(3, triple_axel["multihit"])
+        self.assertTrue(population_bomb["multiaccuracy"])
+        self.assertEqual(10, population_bomb["multihit"])
+
+    def test_loaded_dice_population_bomb_uses_four_to_ten_hit_branch(self) -> None:
+        opponents = [
+            "Maushold",
+            "Charizard",
+            "Garchomp",
+            "Kingambit",
+            "Sylveon",
+            "Farigiraf",
+        ]
+        state = create_match(
+            opponents,
+            ["froslass", "sneasler", "basculegion", "dragonite"],
+            ["froslass", "sneasler"],
+            opponent_lead=["maushold", "charizard"],
+            match_id="loaded-dice-population-bomb-fixture",
+        )
+        maushold = state.opponent.roster["maushold"]
+        maushold.item = "Loaded Dice"
+        maushold.ability = "Technician"
+        state.opponent.known_facts["maushold"] = {
+            "item": maushold.item,
+            "ability": maushold.ability,
+            "nature": "Jolly",
+            "evs": {"atk": 252, "spe": 252},
+        }
+        target = state.player.active[1]
+        response = {
+            "label": "Loaded Dice Population Bomb",
+            "probability": 1.0,
+            "actions": [
+                {
+                    "actor": "maushold",
+                    "kind": "move",
+                    "move": "Population Bomb",
+                    "target": target,
+                }
+            ],
+        }
+        outcomes = VerifiedTurnResolver(
+            self.calculator, MultiTurnConfig(samples_per_response=16)
+        ).resolve_samples(PlanningState.initial(state), JointAction(()), response)
+
+        self.assertTrue(outcomes)
+        self.assertTrue(all(row.next_state.uncertainty is None for row in outcomes))
+        hit_traces = [
+            " | ".join(row.next_state.trace)
+            for row in outcomes
+            if "Population Bomb→" in " | ".join(row.next_state.trace)
+        ]
+        self.assertTrue(hit_traces)
+        self.assertTrue(
+            all(
+                any(f":{hits}-hits:" in trace for hits in range(4, 11))
+                for trace in hit_traces
+            )
+        )
 
     def test_focus_sash_survival_and_spread_protect_are_resolved(self) -> None:
         state, _ = self.position()

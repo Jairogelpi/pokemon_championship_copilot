@@ -12,6 +12,8 @@ sys.path.insert(0, str(ROOT / "packages" / "battle-engine" / "src"))
 
 from champions_copilot.search import (  # noqa: E402
     ChanceOutcome,
+    EndgameCycleDetected,
+    ExhaustiveEndgameSolver,
     RiskAwareExpectiminimax,
     SearchBudgetExhausted,
     SearchConfig,
@@ -259,6 +261,61 @@ class RiskAwareSearchTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "negative probability"):
             RiskAwareExpectiminimax(SearchConfig()).search(game, "root")
+
+
+class ExhaustiveEndgameTests(unittest.TestCase):
+    def test_closes_every_chance_branch_to_terminal_states(self) -> None:
+        game = TreeGame(
+            edges={
+                "root": [
+                    Edge("attack", "best defence", 1, "hit", 0.75, "win", 0),
+                    Edge("attack", "best defence", 1, "miss", 0.25, "loss", 0),
+                    Edge("wait", "best defence", 1, "draw", 1, "draw", 0),
+                ],
+            },
+            evaluations={},
+            terminals={"win": 100, "draw": 0, "loss": -100},
+        )
+
+        result = ExhaustiveEndgameSolver(time_budget_ms=None).solve(game, "root")
+
+        self.assertTrue(result.to_dict()["exhaustive_claim"])
+        self.assertEqual("attack", result.best.action)
+        self.assertEqual(50, result.best.value.expected_utility)
+        self.assertEqual(0.75, result.best.value.win_probability)
+        self.assertEqual(0.25, result.best.value.loss_probability)
+        self.assertEqual(3, result.stats.chance_branches)
+
+    def test_opponent_responses_are_adversarial_not_probability_averaged(self) -> None:
+        game = TreeGame(
+            edges={
+                "root": [
+                    Edge("greedy", "allow", 0.99, "win", 1, "win", 0),
+                    Edge("greedy", "counter", 0.01, "loss", 1, "loss", 0),
+                    Edge("forced", "only", 1, "draw", 1, "draw", 0),
+                ]
+            },
+            evaluations={},
+            terminals={"win": 100, "draw": 0, "loss": -100},
+        )
+
+        result = ExhaustiveEndgameSolver(time_budget_ms=None).solve(game, "root")
+
+        self.assertEqual("forced", result.best.action)
+        greedy = next(row for row in result.alternatives if row.action == "greedy")
+        self.assertEqual("counter", greedy.worst_response)
+        self.assertEqual(-100, greedy.value.expected_utility)
+
+    def test_reachable_cycle_fails_closed(self) -> None:
+        game = TreeGame(
+            edges={
+                "root": [Edge("protect", "protect", 1, "repeat", 1, "root", 0)]
+            },
+            evaluations={},
+        )
+
+        with self.assertRaises(EndgameCycleDetected):
+            ExhaustiveEndgameSolver(time_budget_ms=None).solve(game, "root")
 
 
 if __name__ == "__main__":

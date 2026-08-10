@@ -53,10 +53,11 @@ The adapter resolves a declared compatibility subset:
 The residual-other response, rare move-specific callbacks, unimplemented
 volatiles, and undeclared Champions divergences terminate the branch as an
 explicit uncertainty state with a risk penalty. Release 0.8 adds independent
-critical checks for equal-power multi-hit moves; Beat Up, Dragon Darts,
-Population Bomb, Triple Axel, and Triple Kick still fail closed at their
-specialized per-hit callback boundary. Uncertainty reasons are counted
-individually in transition telemetry.
+critical checks for equal-power multi-hit moves. Release 0.9 adds per-hit
+accuracy and escalating power for Triple Axel/Triple Kick plus the Loaded Dice
+4–10-hit rule for Population Bomb. Beat Up, Dragon Darts, and state-changing
+contact/secondary reactions per hit remain explicit boundaries. Uncertainty
+reasons are counted individually in transition telemetry.
 Species missing from the native Gen 9 Pokédex use their latest official species
 and learnset record under Gen 9 calculation mechanics, with the source
 generation returned explicitly.
@@ -76,8 +77,9 @@ preserved.
 - Every searched concrete state is reachable under the sampled scenario; no
   expected-damage state shortcut exists.
 - Search is reproducible, budgeted, inspectable, and safe to pass to Codex.
-- One-turn coverage may be called exhaustive within its bounded model. Future
-  search must always be labelled sampled and non-exhaustive.
+- One-turn coverage may be called exhaustive within its bounded model. General
+  future search remains sampled and non-exhaustive; only the separate ADR-0008
+  terminal tablebase may make an exhaustive multi-turn claim.
 - More mechanics coverage reduces uncertainty penalties and can unlock stronger
   promotions without weakening the fail-closed boundary.
 - This milestone does not establish Master 2000 performance or satisfy the

@@ -2,7 +2,7 @@
 
 ## Current release boundary
 
-Codex strategist 0.8 is a complete vertical slice. A user can start the server,
+Endgame tablebase 0.9 extends the Codex strategist 0.8 vertical slice. A user can start the server,
 enter a team preview, receive a bring-four and lead baseline, record a match,
 inspect beliefs, request paired actions, correct history, and export a replayable
 log. With OpenAI credentials, Codex makes the final strategic selection from a
@@ -31,6 +31,8 @@ deterministic anchor.
 | Decision ranking | One-turn adversarial search with principal lines | Determinism, explanation, coverage, and service tests |
 | Multi-ply search kernel | Implemented and live-wired at depth two | Iterative-depth, risk-tail, cache, budget, and service integration tests |
 | Sampled battle transition adapter | Implemented broad compatibility profile | Replacements, critical/multi-hit damage, status counters, switching, speed, contact, entry, residual, item, spread, and deterministic replay tests |
+| Exact chance replay | Implemented, fail-closed | Protect probability, terminal mass, per-hit accuracy/critical/damage, and unsupported-branch tests |
+| Exhaustive endgame tablebase | Implemented for eligible closed active-only endgames | Terminal expectiminimax, adversarial replies, transpositions, win/draw/loss mass, cycle rejection, current-regulation eligibility, and live promotion test |
 | Multi-turn promotion gate | Implemented, fail-closed at 90% | Completed-depth, modeled probability mass, declared-mechanics resolution, uncertainty reasons, and fallback assertions |
 | Reference verified frontier | 90.18% response probability; 100% declared mechanics | Charizard + Garchomp fixture regression |
 | Champions Mega overlay | Pinned current form stats, types, abilities and Mega Stones | Dragonite/Froslass/Charizard resolution, exact override, weather activation, and calculator branch tests |
@@ -51,13 +53,17 @@ deterministic anchor.
   replica team `GMKXPHAS7D`.
 - Complete coverage for every rare volatile, move-specific callback, ability,
   item, callback-changing multi-hit move, and Champions-specific divergence.
-  Equal-power multi-hit critical checks are independent; unsupported special
-  branches still terminate as named uncertainty leaves.
+  Equal-power multi-hit critical checks are independent. Triple Axel/Triple
+  Kick escalating power and Population Bomb/Loaded Dice hit rules are covered;
+  Beat Up, Dragon Darts, and per-hit contact/secondary state callbacks remain
+  named boundaries.
 - Automatic promotion to the next regulation. The current snapshot stops
   recommendations at expiry until a newly verified snapshot is committed.
 - Observation-driven belief updates inside future branches, calibrated set
-  priors, wider response sampling, and a true exhaustive stochastic endgame
-  solver. The current multi-turn search remains sampled and says so explicitly.
+  priors, and wider response sampling. The general multi-turn search remains
+  sampled; the exhaustive claim is restricted to tablebase-eligible closed
+  endgames. Extending it to living reserves, PP exhaustion, recovery and
+  game-theoretic cycles remains incomplete.
 - Calibrated win-value model and policy weights.
 - Durable server-side match storage and accounts.
 - Screenshot, continuous capture, OCR, and HP-bar measurement.
@@ -72,7 +78,8 @@ The current product is:
 > a fail-closed current-Champions legality registry, searched Mega Evolution,
 > queryable mechanics data, versioned current meta priors, explicit hidden-information
 > uncertainty, exhaustive bounded one-turn replies, verified-sampled two-turn
-> continuations with explicit uncertainty leaves, inspectable principal lines,
+> continuations with explicit uncertainty leaves, a fail-closed terminal
+> tablebase for eligible fully observed active-only endgames, inspectable principal lines,
 > and optional tool-grounded Codex strategic selection restricted to verified
 > legal candidates.
 

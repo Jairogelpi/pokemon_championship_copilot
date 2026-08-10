@@ -189,7 +189,24 @@ function renderRecommendation() {
         </div>`,
     )
     .join("");
-  const multiPanel = ["ok", "partial"].includes(multi.status)
+  const exactPanel = multi.status === "solved" && multi.exhaustive_claim
+    ? `
+      <div class="multiturn-panel promoted">
+        <div class="multiturn-head">
+          <span>Current Champions terminal tablebase · exhaustive</span>
+          <strong>${(Number(multi.best?.win_probability || 0) * 100).toFixed(1)}% win</strong>
+        </div>
+        <div class="multiturn-metrics">
+          <span>${(Number(multi.best?.draw_probability || 0) * 100).toFixed(1)}% draw</span>
+          <span>${(Number(multi.best?.loss_probability || 0) * 100).toFixed(1)}% loss</span>
+          <span>${multi.stats?.states_closed || 0} states closed</span>
+          <span>${multi.stats?.chance_branches || 0} exact chance branches</span>
+          <span>all rival replies adversarial</span>
+        </div>
+        ${multiSteps ? `<details open><summary>Worst-case terminal line</summary>${multiSteps}</details>` : ""}
+      </div>`
+    : "";
+  const sampledPanel = ["ok", "partial"].includes(multi.status)
     ? `
       <div class="multiturn-panel ${multi.promotion_eligible ? "promoted" : "guarded"}">
         <div class="multiturn-head">
@@ -206,6 +223,7 @@ function renderRecommendation() {
         ${multiSteps ? `<details><summary>Principal multi-turn line</summary>${multiSteps}</details>` : ""}
       </div>`
     : "";
+  const multiPanel = exactPanel || sampledPanel;
   const brainStatus = brain.status === "ok"
     ? `Codex selected ${brain.selected_candidate_id} · ${(brain.confidence * 100).toFixed(0)}% confidence`
     : `Deterministic fallback · ${brain.reason || "Codex unavailable"}`;

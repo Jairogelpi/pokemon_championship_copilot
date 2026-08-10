@@ -47,6 +47,12 @@ multi-hit, status, contact, entry, item, weather, and residual mechanics needed
 by the supported team and current meta. Its reference verified frontier is
 90.18%; remaining unknown responses and unsupported callbacks fail closed.
 
+Release 0.9 also closes eligible fully observed active-only endgames to terminal
+win/draw/loss states with exact chance replay and adversarial opponent replies.
+The solver rejects living reserves, incomplete sets, miss/recovery/PP cycles,
+unsupported per-hit state callbacks, and any reachable cycle or budget cutoff;
+those positions continue through the explicitly sampled planner.
+
 Codex strategist 0.8 may research the canonical position with read-only
 mechanics, learnset, meta, matchup, candidate, and damage tools before selecting
 a strategically preferable line from the top twelve verified candidates. Codex
