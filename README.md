@@ -1,7 +1,7 @@
 # Pokémon Champions Battle Copilot
 
 An unofficial, stateful battle assistant for Pokémon Champions doubles. Release
-0.4 adds Codex as the final strategic selector over evidence produced by the
+0.5 gives Codex a read-only battle-research loop over evidence produced by the
 pinned upstream
 [`@smogon/calc`](https://github.com/smogon/damage-calc) engine used by the
 Pokémon Showdown damage calculator.
@@ -13,8 +13,8 @@ mechanics, legality, damage, or speed.
 ## North-star goal
 
 Build a decision system whose play quality can be demonstrated at the level of
-a 2,000-point Master player for its supported team and regulation. Release 0.4
-combines an adversarial one-turn evidence model with Codex strategic selection;
+a 2,000-point Master player for its supported team and regulation. Release 0.5
+combines exhaustive bounded one-turn evaluation with tool-grounded Codex selection;
 it is not yet evidence that this goal has been reached.
 
 This is not a promise to predict every move. Pokémon contains hidden
@@ -127,14 +127,20 @@ export OPENAI_REASONING_EFFORT="high"
 make run
 ```
 
-Codex receives canonical state, beliefs, recent events, eight verified player
+Codex receives canonical state, beliefs, recent events, twelve verified player
 candidates, calculator evidence, response coverage, and principal counter-lines.
+Before selecting, the Responses API requires at least one read-only tool call.
+Codex can inspect candidates and exact damage matrices, query any Gen 9 species,
+move, item, ability, nature or type, load complete learnsets, test type matchups,
+read dated meta priors, and calculate a hidden-but-learnable move against the
+canonical live position. Tool results retain their source and cannot mutate the
+match.
 It returns a schema-constrained candidate ID, opponent-plan hypotheses, win
 condition, failure mode, risk, and explanation. Invalid output, refusal,
 timeout, or API failure falls back to the deterministic anchor. Event proposals
 still require explicit confirmation before the engine applies them.
 
-## Implemented in Codex strategist 0.4
+## Implemented in Codex strategist 0.5
 
 - Complete in-memory match lifecycle and six-versus-six team preview.
 - Bring-four and lead baseline for `GMKXPHAS7D`.
@@ -177,7 +183,7 @@ still require explicit confirmation before the engine applies them.
 - Concrete opponent-action generation for both active slots: candidate moves,
   all live single targets, spread targets, Protect, legal bench switches, and
   a residual hidden-response branch.
-- Exhaustive Cartesian enumeration of the bounded response model (206 legal
+- Exhaustive Cartesian enumeration of the bounded response model (192 legal
   joint replies in the default Charizard + Garchomp fixture), with explicit
   coverage mass and no discarded probability.
 - One-turn simultaneous adversarial search that evaluates every player paired
@@ -189,6 +195,15 @@ still require explicit confirmation before the engine applies them.
   belief state, fast input, interpretation proposals, log, undo, and export.
 - Codex strategic selection through the Responses API using strict Structured
   Outputs and a dynamic enum of verified candidate IDs.
+- Responses function-calling loop with eight strict, read-only battle tools and
+  an eight-call budget. The loop preserves reasoning items and returns every
+  tool result to the model before final selection.
+- On-demand verified damage for any active Pokémon, learnable move, and current
+  target. Learnability comes from pinned `@pkmn/data`; rolls come from pinned
+  `@smogon/calc`; unsupported moves return an error instead of an estimate.
+- Auditable search-space telemetry: legal player actions, expanded opponent
+  replies, evaluated action/response pairs, truncation count, horizon, and an
+  explicit exhaustive-within-horizon flag.
 - Fail-closed Codex boundary: no API key, refusal, timeout, malformed output,
   unknown action ID, or invalid probability mass preserves the deterministic
   recommendation.
@@ -211,10 +226,11 @@ See:
 - [ADR-0003: official Showdown calculator boundary](docs/adr/0003-showdown-calculator-boundary.md)
 - [ADR-0004: verified multi-ply transition boundary](docs/adr/0004-multi-ply-transition-boundary.md)
 - [ADR-0005: Codex strategic selector boundary](docs/adr/0005-codex-strategic-selector.md)
+- [ADR-0006: tool-grounded battle research](docs/adr/0006-tool-grounded-battle-research.md)
 
 ## Status
 
-Codex strategist 0.4 is runnable and tested. When an API key is configured,
+Codex strategist 0.5 is runnable and tested. When an API key is configured,
 Codex owns the final strategic choice inside the verified candidate envelope;
 otherwise the same endpoint degrades to the deterministic anchor. Damage values
 are exact under each displayed Showdown Gen 9 scenario. Pokémon Champions is not a
@@ -259,7 +275,9 @@ POST /api/meta/species            dated Regulation M-B S3 strategy entry
 “100% response coverage” means every joint response generated from the current
 revealed moves, six ranked meta candidates per active Pokémon, legal targets,
 Protect, switches, and residual-other actions. It does not mean every hidden
-four-move set or every future Champions-specific mechanic is known.
+four-move set or every future Champions-specific mechanic is known. The response
+also reports the exact action/response pair count and whether the configured
+one-turn horizon was exhaustively evaluated without truncation.
 
 The scheduled updater can also be run manually from the Actions tab or locally:
 

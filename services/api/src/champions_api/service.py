@@ -8,6 +8,7 @@ from champions_copilot.events import BattleEvent, apply_event, replay
 from champions_copilot.mechanics import calculate_damage_range, effective_speed
 from champions_copilot.team import PLAYER_TEAM, create_match
 
+from .battle_tools import BattleKnowledgeTools
 from .codex_brain import CodexBattleBrain
 from .openai_adapter import OpenAIEventInterpreter
 from .meta import MetaRepository
@@ -38,7 +39,7 @@ class AppService:
         calculator = self.calculator.health()
         return {
             "status": "ok" if calculator.get("available") else "degraded",
-            "policy_version": "codex-strategist-0.4",
+            "policy_version": "codex-strategist-0.5",
             "validation_status": (
                 "CODEX_STRATEGIST_AVAILABLE"
                 if self.brain.configured
@@ -299,6 +300,13 @@ class AppService:
             beliefs=record.beliefs,
             recommendation=baseline,
             events=[event.to_dict() for event in record.events],
+            knowledge_tools=BattleKnowledgeTools(
+                calculator=self.calculator,
+                meta=self.meta,
+                state=record.state,
+                beliefs=record.beliefs,
+                recommendation=baseline,
+            ),
         )
         record.recommendation_revision = record.state.revision
         record.cached_recommendation = result

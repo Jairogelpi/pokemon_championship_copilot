@@ -12,6 +12,9 @@ sys.path.insert(0, str(ROOT / "packages" / "battle-engine" / "src"))
 sys.path.insert(0, str(ROOT / "services" / "api" / "src"))
 
 from champions_api.codex_brain import CodexBattleBrain  # noqa: E402
+from champions_api.battle_tools import BattleKnowledgeTools  # noqa: E402
+from champions_api.meta import MetaRepository  # noqa: E402
+from champions_api.showdown import ShowdownCalculator  # noqa: E402
 from champions_copilot.beliefs import BeliefState  # noqa: E402
 from champions_copilot.decision import recommend_actions, recommend_team_preview  # noqa: E402
 from champions_copilot.team import create_match  # noqa: E402
@@ -98,7 +101,7 @@ class CodexBattleBrainTests(unittest.TestCase):
         )
         self.assertEqual("codex", result["brain"]["decision_source"])
         self.assertTrue(result["brain"]["overrode_deterministic_anchor"])
-        self.assertEqual("codex-strategist-0.4", result["policy_version"])
+        self.assertEqual("codex-strategist-0.5", result["policy_version"])
         self.assertEqual(
             "CODEX_SELECTED_FROM_VERIFIED_CANDIDATES",
             result["validation_status"],
@@ -114,6 +117,161 @@ class CodexBattleBrainTests(unittest.TestCase):
             [row["id"] for row in result["candidate_catalog"]],
             candidate_enum,
         )
+
+    def test_codex_can_query_verified_knowledge_before_selecting(self) -> None:
+        state, beliefs, recommendation = fixture()
+        calculator = ShowdownCalculator(ROOT)
+        tools = BattleKnowledgeTools(
+            calculator=calculator,
+            meta=MetaRepository(ROOT),
+            state=state,
+            beliefs=beliefs,
+            recommendation=recommendation,
+        )
+        requests: list[dict[str, Any]] = []
+
+        def transport(body: dict[str, Any]) -> dict[str, Any]:
+            requests.append(body)
+            if len(requests) == 1:
+                return {
+                    "output": [
+                        {"type": "reasoning", "id": "reasoning-1", "summary": []},
+                        {
+                            "type": "function_call",
+                            "call_id": "call-1",
+                            "name": "inspect_candidate",
+                            "arguments": json.dumps({"candidate_id": "candidate-02"}),
+                        },
+                    ]
+                }
+            return response_for()
+
+        brain = CodexBattleBrain(api_key="test-key", transport=transport)
+        try:
+            result = brain.decide(
+                state=state,
+                beliefs=beliefs,
+                recommendation=recommendation,
+                events=[],
+                knowledge_tools=tools,
+            )
+        finally:
+            calculator.close()
+
+        self.assertEqual("required", requests[0]["tool_choice"])
+        self.assertEqual(8, len(requests[0]["tools"]))
+        self.assertEqual("auto", requests[1]["tool_choice"])
+        follow_up_items = requests[1]["input"]
+        self.assertTrue(any(item.get("type") == "reasoning" for item in follow_up_items))
+        tool_outputs = [
+            item for item in follow_up_items if item.get("type") == "function_call_output"
+        ]
+        self.assertEqual(1, len(tool_outputs))
+        self.assertTrue(json.loads(tool_outputs[0]["output"])["ok"])
+        self.assertEqual(1, result["brain"]["tool_calls_completed"])
+        self.assertEqual("inspect_candidate", result["brain"]["tool_calls"][0]["name"])
+        self.assertEqual(
+            "read_only_verified_battle_knowledge",
+            result["brain"]["knowledge_manifest"]["mode"],
+        )
+
+    def test_battle_tools_expose_mechanics_learnsets_matchups_and_meta(self) -> None:
+        state, beliefs, recommendation = fixture()
+        calculator = ShowdownCalculator(ROOT)
+        tools = BattleKnowledgeTools(
+            calculator=calculator,
+            meta=MetaRepository(ROOT),
+            state=state,
+            beliefs=beliefs,
+            recommendation=recommendation,
+        )
+        try:
+            move = tools.execute(
+                "lookup_battle_entity", {"kind": "move", "name": "Fake Out"}
+            )
+            learnset = tools.execute(
+                "lookup_learnset", {"species": "Garchomp", "restriction": None}
+            )
+            matchup = tools.execute(
+                "lookup_type_matchup",
+                {"attack_type": "Ground", "defender": "Charizard"},
+            )
+            damage = tools.execute(
+                "calculate_verified_damage",
+                {
+                    "side": "opponent",
+                    "actor": "Garchomp",
+                    "move": "Earthquake",
+                    "target": "Sneasler",
+                },
+            )
+            impossible_damage = tools.execute(
+                "calculate_verified_damage",
+                {
+                    "side": "opponent",
+                    "actor": "Garchomp",
+                    "move": "Spore",
+                    "target": "Sneasler",
+                },
+            )
+            meta = tools.execute("lookup_meta", {"species": "Garchomp"})
+        finally:
+            calculator.close()
+
+        self.assertEqual(3, move["result"]["entry"]["priority"])
+        self.assertIn(
+            "Earthquake", {entry["name"] for entry in learnset["result"]["moves"]}
+        )
+        self.assertEqual(0, matchup["result"]["multiplier"])
+        self.assertTrue(damage["result"]["learnset_verified"])
+        self.assertEqual("Earthquake", damage["result"]["estimate"]["move"])
+        self.assertEqual(
+            16,
+            sum(
+                roll["weight"]
+                for roll in damage["result"]["estimate"]["scenarios"][0]["rolls_percent"]
+            ),
+        )
+        self.assertFalse(impossible_damage["ok"])
+        self.assertFalse(impossible_damage["fabricated"])
+        self.assertTrue(meta["result"]["found"])
+        self.assertFalse(meta["result"]["mechanics_authority"])
+
+    def test_unknown_tool_request_fails_closed(self) -> None:
+        state, beliefs, recommendation = fixture()
+        calculator = ShowdownCalculator(ROOT)
+        tools = BattleKnowledgeTools(
+            calculator=calculator,
+            meta=MetaRepository(ROOT),
+            state=state,
+            beliefs=beliefs,
+            recommendation=recommendation,
+        )
+        unknown_call = {
+            "output": [
+                {
+                    "type": "function_call",
+                    "call_id": "call-unknown",
+                    "name": "invent_damage",
+                    "arguments": "{}",
+                }
+            ]
+        }
+        brain = CodexBattleBrain(api_key="test-key", transport=lambda _: unknown_call)
+        try:
+            result = brain.decide(
+                state=state,
+                beliefs=beliefs,
+                recommendation=recommendation,
+                events=[],
+                knowledge_tools=tools,
+            )
+        finally:
+            calculator.close()
+
+        self.assertEqual("fallback", result["brain"]["status"])
+        self.assertEqual("ValueError", result["brain"]["reason"])
+        self.assertEqual("deterministic", result["brain"]["decision_source"])
 
     def test_unconfigured_brain_preserves_deterministic_recommendation(self) -> None:
         state, beliefs, recommendation = fixture()

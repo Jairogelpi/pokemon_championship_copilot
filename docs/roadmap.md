@@ -40,8 +40,9 @@ battle transition adapter that produces legal next states and explicit chance
 branches from resolved joint actions. Expected-damage shortcuts do not satisfy
 this gate.
 
-Codex strategist 0.4 may select a strategically preferable line from the top
-eight verified candidates and expose opponent-plan hypotheses. This improves
+Codex strategist 0.5 may research the canonical position with read-only
+mechanics, learnset, meta, matchup, candidate, and damage tools before selecting
+a strategically preferable line from the top twelve verified candidates. This improves
 judgment over the bounded evidence but does not satisfy the multi-ply gate:
 Codex is not allowed to manufacture future battle states.
 

@@ -114,7 +114,7 @@ class Recommendation:
     calculator: dict[str, Any]
     response_model: dict[str, Any]
     candidate_catalog: tuple[RankedAction, ...] = ()
-    policy_version: str = "adversarial-search-0.3"
+    policy_version: str = "adversarial-search-0.5"
     validation_status: str = "ADVERSARIAL_SHOWDOWN_MODEL"
 
     def to_dict(self) -> dict[str, Any]:
@@ -800,7 +800,7 @@ def recommend_actions(
         risk=risk,
         assumptions=tuple(assumptions),
         calculator=status,
-        candidate_catalog=tuple(ranked[:8]),
+        candidate_catalog=tuple(ranked[:12]),
         response_model={
             "scenarios_evaluated": len(concrete_responses or response_distribution),
             "concrete": bool(concrete_responses),
@@ -845,6 +845,37 @@ def recommend_actions(
                 )[:5]
             ],
             "lower_tail_mass": 0.2,
+            "search_space": {
+                "horizon_turns": 1,
+                "legal_player_joint_actions": len(ranked),
+                "modelled_opponent_joint_responses": len(
+                    concrete_responses or response_distribution
+                ),
+                "evaluated_action_response_pairs": len(ranked)
+                * len(concrete_responses or response_distribution),
+                "expanded_legal_opponent_joint_responses": (
+                    concrete_response_model.get("expanded_legal_joint_responses")
+                    if concrete_response_model
+                    else len(response_distribution)
+                ),
+                "truncated_opponent_joint_responses": (
+                    concrete_response_model.get("truncated_joint_responses", 0)
+                    if concrete_response_model
+                    else 0
+                ),
+                "exhaustive_within_configured_horizon": bool(
+                    concrete_responses
+                    and concrete_response_model
+                    and concrete_response_model.get(
+                        "exhaustive_within_response_horizon", False
+                    )
+                ),
+                "candidate_selection_envelope": min(12, len(ranked)),
+                "hidden_information_policy": (
+                    "unknown actions remain explicit residual branches; they are never "
+                    "silently assigned certainty"
+                ),
+            },
         },
         validation_status=(
             "ADVERSARIAL_SHOWDOWN_MODEL" if has_showdown and concrete_responses

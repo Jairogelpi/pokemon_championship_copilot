@@ -225,6 +225,7 @@ def build_response_model(
     kept = combinations[:maximum_joint_responses]
     coverage_mass = sum(float(row["probability"]) for row in kept)
     residual_mass = max(0.0, 1.0 - coverage_mass)
+    explicit_joint_responses = len(kept)
     if residual_mass > 1e-12:
         kept.append(
             {
@@ -248,6 +249,11 @@ def build_response_model(
         "coverage_mass": round(coverage_mass, 6),
         "residual_mass": round(residual_mass, 6),
         "joint_responses_evaluated": len(kept),
+        "expanded_legal_joint_responses": len(combinations),
+        "explicit_joint_responses": explicit_joint_responses,
+        "maximum_joint_responses": maximum_joint_responses,
+        "truncated_joint_responses": max(0, len(combinations) - explicit_joint_responses),
+        "exhaustive_within_response_horizon": len(combinations) <= maximum_joint_responses,
         "candidate_actions": {
             actor_id: [
                 {

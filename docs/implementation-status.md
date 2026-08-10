@@ -2,7 +2,7 @@
 
 ## Current release boundary
 
-Codex strategist 0.4 is a complete vertical slice. A user can start the server,
+Codex strategist 0.5 is a complete vertical slice. A user can start the server,
 enter a team preview, receive a bring-four and lead baseline, record a match,
 inspect beliefs, request paired actions, correct history, and export a replayable
 log. With OpenAI credentials, Codex makes the final strategic selection from a
@@ -34,7 +34,9 @@ deterministic anchor.
 | Local text interpretation | Implemented | Spanish HP proposal test |
 | OpenAI structured proposals | Implemented, optional | Requires user API credentials |
 | Codex strategic selector | Implemented, optional, fail-closed | Dynamic candidate enum, output validation, fallback, and privacy tests |
+| Codex battle research tools | Implemented, optional, read-only | Forced function call, tool-loop continuity, mechanics, learnset, matchup, meta, damage, and unknown-tool tests |
 | Codex decision evidence | Implemented | Anchor, selected ID, confidence, win condition, opponent plan, and failure mode |
+| Search-space audit | Implemented for live one-turn policy | Exact action/reply product, horizon, truncation, coverage, and exhaustiveness assertions |
 | Match export | Implemented | Export replays against canonical state |
 | Continuous integration | Implemented | Pinned npm install plus Python/Node checks |
 
@@ -63,8 +65,8 @@ The current product is:
 > A runnable, state-correct Battle Copilot with pinned Showdown damage rolls,
 > queryable mechanics data, versioned meta priors, explicit hidden-information
 > uncertainty, exhaustive bounded one-turn replies, inspectable principal
-> counter-lines, and optional Codex strategic selection restricted to verified
-> legal candidates.
+> counter-lines, and optional tool-grounded Codex strategic selection restricted
+> to verified legal candidates.
 
 It is not yet:
 

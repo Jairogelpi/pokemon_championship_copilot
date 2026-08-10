@@ -423,3 +423,104 @@ def calculate_revealed_threats(
         {key: _estimate_from_rows(key, rows, offense=True) for key, rows in grouped.items()},
         errors,
     )
+
+
+def calculate_canonical_damage(
+    calculator: ShowdownCalculator,
+    state: BattleState,
+    *,
+    side: str,
+    actor_id: str,
+    move: str,
+    target_id: str,
+) -> dict[str, Any]:
+    """Calculate a current-position matchup after verifying Gen 9 learnability.
+
+    This is intentionally read-only and separate from legal action generation.
+    It lets the strategist test a hidden-but-learnable move without silently
+    promoting that hypothesis to a revealed fact or legal recommendation.
+    """
+
+    if side not in {"player", "opponent"}:
+        raise ValueError("side must be player or opponent")
+    attacker_side = state.side(side)
+    defender_side = state.side("opponent" if side == "player" else "player")
+    if actor_id not in attacker_side.active:
+        raise ValueError("actor must be active in the canonical position")
+    if actor_id not in attacker_side.roster or attacker_side.roster[actor_id].fainted:
+        raise ValueError("actor is unavailable")
+    if target_id not in defender_side.roster or defender_side.roster[target_id].fainted:
+        raise ValueError("target is unavailable")
+
+    actor = attacker_side.roster[actor_id]
+    target = defender_side.roster[target_id]
+    move_entry = calculator.lookup("move", move, generation=9)["entry"]
+    learnset = calculator.learnset(actor.name, generation=9)
+    learnable = {str(entry["id"]) for entry in learnset["moves"]}
+    if str(move_entry["id"]) not in learnable:
+        raise ValueError(f"{move_entry['name']} is not in {actor.name}'s Gen 9 learnset")
+    if move_entry.get("category") == "Status":
+        return {
+            "damage_applicable": False,
+            "actor": actor_id,
+            "actor_species": actor.name,
+            "move": move_entry,
+            "target": target_id,
+            "target_species": target.name,
+            "learnset_verified": True,
+            "source": "pinned @pkmn/data + @pkmn/dex",
+        }
+
+    offense = side == "opponent"
+    if offense:
+        facts = _known(attacker_side, actor_id)
+        scenarios = (
+            (BulkScenario("confirmed_set", 1.0, dict(facts["evs"])),)
+            if "evs" in facts
+            else OFFENSE_SCENARIOS
+        )
+    else:
+        scenarios = _defender_scenarios(defender_side, target)
+
+    requests: list[dict[str, Any]] = []
+    rows: list[tuple[BulkScenario, dict[str, Any]]] = []
+    for scenario in scenarios:
+        if offense:
+            attacker = _pokemon_spec(
+                attacker_side, actor, evs=scenario.evs, nature=scenario.nature
+            )
+            defender = _pokemon_spec(defender_side, target)
+            field = _opponent_field(state, target)
+        else:
+            attacker = _pokemon_spec(attacker_side, actor)
+            defender = _pokemon_spec(
+                defender_side, target, evs=scenario.evs, nature=scenario.nature
+            )
+            field = _field(state, target)
+        requests.append(
+            {
+                "generation": 9,
+                "scenario": scenario.name,
+                "attacker": attacker,
+                "defender": defender,
+                "move": {"name": move_entry["name"]},
+                "field": field,
+            }
+        )
+
+    for scenario, response in zip(scenarios, calculator.batch(requests), strict=True):
+        if not response.get("ok") or not isinstance(response.get("result"), dict):
+            error = response.get("error") or {}
+            raise ShowdownUnavailable(str(error.get("message", "calculation failed")))
+        rows.append((scenario, response["result"]))
+    estimate = _estimate_from_rows(
+        (actor_id, str(move_entry["name"]), target_id), rows, offense=offense
+    )
+    return {
+        "damage_applicable": True,
+        "actor_species": actor.name,
+        "target_species": target.name,
+        "learnset_verified": True,
+        "learnset_source": "pinned @pkmn/data + @pkmn/dex",
+        "estimate": estimate.to_dict(),
+    }

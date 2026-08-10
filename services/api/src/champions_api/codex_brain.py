@@ -4,13 +4,16 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from champions_copilot.beliefs import BeliefState
 from champions_copilot.decision import RankedAction, Recommendation
 from champions_copilot.models import BattleState
+
+if TYPE_CHECKING:
+    from .battle_tools import BattleKnowledgeTools
 
 
 ResponseTransport = Callable[[dict[str, Any]], dict[str, Any]]
@@ -21,7 +24,8 @@ class CodexBrainConfig:
     model: str
     reasoning_effort: str
     timeout_seconds: float
-    candidate_limit: int = 8
+    candidate_limit: int = 12
+    tool_call_limit: int = 8
 
 
 class CodexBattleBrain:
@@ -81,6 +85,7 @@ class CodexBattleBrain:
             "model": self.config.model,
             "reasoning_effort": self.config.reasoning_effort,
             "candidate_limit": self.config.candidate_limit,
+            "tool_call_limit": self.config.tool_call_limit,
         }
 
     def decide(
@@ -90,6 +95,7 @@ class CodexBattleBrain:
         beliefs: BeliefState,
         recommendation: Recommendation,
         events: list[dict[str, Any]],
+        knowledge_tools: BattleKnowledgeTools | None = None,
     ) -> dict[str, Any]:
         baseline = recommendation.to_dict()
         candidates = list(recommendation.candidate_catalog[: self.config.candidate_limit])
@@ -112,11 +118,22 @@ class CodexBattleBrain:
                 "calculator": baseline["calculator"],
                 "assumptions": baseline["assumptions"],
             },
+            "verified_knowledge_manifest": (
+                knowledge_tools.manifest() if knowledge_tools is not None else None
+            ),
         }
+        input_items: list[dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": json.dumps(
+                    context, ensure_ascii=False, separators=(",", ":")
+                ),
+            }
+        ]
         request_body = {
             "model": self.config.model,
             "instructions": self._instructions(),
-            "input": json.dumps(context, ensure_ascii=False, separators=(",", ":")),
+            "input": input_items,
             "reasoning": {"effort": self.config.reasoning_effort},
             "text": {
                 "verbosity": "low",
@@ -130,8 +147,64 @@ class CodexBattleBrain:
             "store": False,
             "safety_identifier": self._safety_identifier(state.match_id),
         }
+        if knowledge_tools is not None:
+            request_body["tools"] = knowledge_tools.definitions()
+            request_body["tool_choice"] = "required"
+        tool_trace: list[dict[str, Any]] = []
         try:
             payload = self._transport(request_body)
+            while True:
+                function_calls = [
+                    item
+                    for item in payload.get("output", [])
+                    if isinstance(item, dict) and item.get("type") == "function_call"
+                ]
+                if not function_calls:
+                    break
+                if knowledge_tools is None:
+                    raise ValueError("model requested a tool without a knowledge provider")
+                if len(tool_trace) + len(function_calls) > self.config.tool_call_limit:
+                    raise ValueError("battle knowledge tool-call limit exceeded")
+                output_items = payload.get("output")
+                if not isinstance(output_items, list) or not all(
+                    isinstance(item, dict) for item in output_items
+                ):
+                    raise TypeError("response output must be an array of objects")
+                input_items.extend(output_items)
+                for call in function_calls:
+                    call_id = call.get("call_id")
+                    name = call.get("name")
+                    if not isinstance(call_id, str) or not call_id:
+                        raise ValueError("function call is missing call_id")
+                    if not isinstance(name, str) or not name:
+                        raise ValueError("function call is missing name")
+                    arguments = json.loads(str(call.get("arguments", "{}")))
+                    if not isinstance(arguments, dict):
+                        raise TypeError("function arguments must be an object")
+                    tool_result = knowledge_tools.execute(name, arguments)
+                    tool_trace.append(
+                        {
+                            "name": name,
+                            "arguments": arguments,
+                            "ok": bool(tool_result.get("ok")),
+                            "source": tool_result.get("source"),
+                        }
+                    )
+                    input_items.append(
+                        {
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": json.dumps(
+                                tool_result, ensure_ascii=False, separators=(",", ":")
+                            ),
+                        }
+                    )
+                follow_up = dict(request_body)
+                follow_up["input"] = input_items
+                follow_up["tool_choice"] = "auto"
+                payload = self._transport(follow_up)
+            if knowledge_tools is not None and not tool_trace:
+                raise ValueError("Codex returned without required verified battle research")
             decision = self._extract_decision(payload)
             self._validate_decision(decision, set(candidate_ids))
         except (
@@ -143,8 +216,19 @@ class CodexBattleBrain:
             TypeError,
             ValueError,
         ) as exc:
-            return self._fallback(baseline, f"{type(exc).__name__}")
-        return self._apply_decision(baseline, candidates, catalog, decision)
+            return self._fallback(
+                baseline, f"{type(exc).__name__}", tool_trace=tool_trace
+            )
+        return self._apply_decision(
+            baseline,
+            candidates,
+            catalog,
+            decision,
+            tool_trace=tool_trace,
+            knowledge_manifest=(
+                knowledge_tools.manifest() if knowledge_tools is not None else None
+            ),
+        )
 
     @staticmethod
     def _instructions() -> str:
@@ -155,6 +239,10 @@ class CodexBattleBrain:
             "as immutable evidence. Never invent a move, target, damage roll, hidden fact, or "
             "future state. Infer the opponent's plan probabilistically, preserve a residual "
             "unknown line, "
+            "When verified battle tools are available, inspect the position and query every "
+            "mechanics, damage, learnset, type, or meta fact needed before deciding. Tool output "
+            "is evidence; tool errors are not permission to guess. Compare principal counter-lines "
+            "and search-space coverage, not only the headline score. "
             "identify the player's current win condition, and prefer a line that remains strong if "
             "the most likely read is wrong. You may disagree with the deterministic anchor when "
             "the recorded strategic evidence justifies it. Explain only lines represented in "
@@ -290,6 +378,9 @@ class CodexBattleBrain:
         candidates: list[RankedAction],
         catalog: list[dict[str, Any]],
         decision: dict[str, Any],
+        *,
+        tool_trace: list[dict[str, Any]],
+        knowledge_manifest: dict[str, Any] | None,
     ) -> dict[str, Any]:
         full_by_id = {
             str(catalog[index]["id"]): candidate.to_dict()
@@ -312,7 +403,7 @@ class CodexBattleBrain:
         result["assumptions"] = list(
             dict.fromkeys([*baseline["assumptions"], *decision["assumptions"]])
         )
-        result["policy_version"] = "codex-strategist-0.4"
+        result["policy_version"] = "codex-strategist-0.5"
         result["validation_status"] = "CODEX_SELECTED_FROM_VERIFIED_CANDIDATES"
         result["brain"] = {
             **self.status(),
@@ -326,14 +417,23 @@ class CodexBattleBrain:
             "opponent_plan": list(decision["opponent_plan"]),
             "main_failure_mode": str(decision["main_failure_mode"]),
             "candidate_envelope_size": len(catalog),
+            "tool_calls": tool_trace,
+            "tool_calls_completed": len(tool_trace),
+            "knowledge_manifest": knowledge_manifest,
             "evidence_boundary": (
                 "Codex selected an ID from the deterministic legal-action catalog; mechanics, "
-                "damage, state, and principal lines were not model-generated."
+                "damage, state, meta provenance, and principal lines were not model-generated."
             ),
         }
         return result
 
-    def _fallback(self, baseline: dict[str, Any], reason: str) -> dict[str, Any]:
+    def _fallback(
+        self,
+        baseline: dict[str, Any],
+        reason: str,
+        *,
+        tool_trace: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         result = dict(baseline)
         anchor_id = None
         if baseline.get("candidate_catalog"):
@@ -347,6 +447,8 @@ class CodexBattleBrain:
             "deterministic_anchor_id": anchor_id,
             "overrode_deterministic_anchor": False,
             "candidate_envelope_size": len(baseline.get("candidate_catalog", [])),
+            "tool_calls": list(tool_trace or []),
+            "tool_calls_completed": len(tool_trace or []),
         }
         return result
 

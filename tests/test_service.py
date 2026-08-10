@@ -40,7 +40,15 @@ class ServiceTests(unittest.TestCase):
         self.assertGreater(response_model["scenarios_evaluated"], 1)
         self.assertTrue(self.created["recommendation"]["primary"]["principal_lines"])
         self.assertIn("modelled_opponent_moves", calculator)
-        self.assertEqual(8, len(self.created["recommendation"]["candidate_catalog"]))
+        self.assertEqual(12, len(self.created["recommendation"]["candidate_catalog"]))
+        search_space = response_model["search_space"]
+        self.assertEqual(
+            search_space["legal_player_joint_actions"]
+            * search_space["modelled_opponent_joint_responses"],
+            search_space["evaluated_action_response_pairs"],
+        )
+        self.assertTrue(search_space["exhaustive_within_configured_horizon"])
+        self.assertEqual(0, search_space["truncated_opponent_joint_responses"])
         self.assertEqual(
             "deterministic",
             self.created["recommendation"]["brain"]["decision_source"],
