@@ -1,29 +1,28 @@
 {
   "schema_version": 2,
-  "snapshot_id": "champions-reg-m-b-m5-2026-08-10",
+  "snapshot_id": "champions-reg-m-b-m-5-2026-08-11",
   "regulation_snapshot_id": "champions-reg-m-b-m5-2026-08-10",
   "format": "Pokemon Champions Doubles Regulation M-B / Season M-5",
   "regulation": "M-B",
   "season": "M-5",
-  "retrieved_at": "2026-08-10",
+  "retrieved_at": "2026-08-11",
   "active_to": "2026-09-02T01:59:00Z",
   "source": {
     "name": "RotomPicks current Regulation M-B meta",
     "url": "https://rotompicks.com/en/meta/",
     "kind": "community-current-meta-aggregation",
     "lineage": "Pikalytics Pokemon Showdown ranked battles and Champions Lab tournament results",
-    "sha256": "1247a39318a0598cdeedcd6c847a370d19a9472b5e13bbfbcf358c699e9be949"
+    "sha256": "81bfa21d340ffc4ccdf148f82ee7d24d39cfc7d3cf7f737192a5864a4d2e8174"
   },
   "set_prior_source": {
-    "name": "Pikalytics Regulation M-B rolling set pages",
-    "url": "https://www.pikalytics.com/pokedex/battledataregmbs3",
-    "note": "The source path contains s3; it is used only to enrich moves/items for overlapping species and is not treated as the current season identifier."
+    "name": "last verified current-format snapshot",
+    "note": "Only values that survive the pinned Champions species/item/movepool gate are retained."
   },
   "methodology": {
-    "ordered_fields": "Usage, win rate, top three moves, and top item are transcribed from the current Regulation M-B meta page. Additional moves/items only enrich overlapping species from the labelled rolling set source.",
-    "action_prior": "The planner uses current top moves first, then labelled rolling set-order heuristics, and preserves an explicit residual-other branch.",
-    "mechanics_boundary": "This snapshot supplies strategy priors only. The pinned Champions legality snapshot gates species, items, and per-species movepools; the calculator supplies mechanics evidence.",
-    "in_game_boundary": "The usage lineage includes Pokemon Showdown and community tournaments, not the private in-game ladder. Actual in-game usage may differ."
+    "ordered_fields": "Usage, win rate, top moves, and top item come from the current-format page; prior legal values may enrich sparse rows.",
+    "action_prior": "The planner uses current top moves first, then legal set-order heuristics, and preserves an explicit residual-other branch.",
+    "mechanics_boundary": "This snapshot supplies strategy priors only. The pinned Champions snapshot is the legality authority.",
+    "in_game_boundary": "The source includes Showdown and community tournaments, not the private in-game ladder. Actual in-game usage may differ."
   },
   "pokemon": [
     {
@@ -53,14 +52,10 @@
       ],
       "top_item_observed": "White Herb",
       "rejected_source_values": {
-        "moves": [
-          "Focus Sash",
-          "Sitrus Berry",
-          "The most popular items for Sneasler are White Herb"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 2,
@@ -89,13 +84,10 @@
       ],
       "top_item_observed": "Sitrus Berry",
       "rejected_source_values": {
-        "moves": [
-          "Chople Berry",
-          "The most popular items for Incineroar are Sitrus Berry"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 3,
@@ -124,14 +116,10 @@
       ],
       "top_item_observed": "Life Orb",
       "rejected_source_values": {
-        "moves": [
-          "Choice Scarf",
-          "Sitrus Berry",
-          "The most popular items for Garchomp are Life Orb"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 4,
@@ -161,13 +149,10 @@
       ],
       "top_item_observed": "Life Orb",
       "rejected_source_values": {
-        "moves": [
-          "Black Glasses",
-          "The most popular items for Kingambit are Chople Berry"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 5,
@@ -196,13 +181,10 @@
       ],
       "top_item_observed": "Sitrus Berry",
       "rejected_source_values": {
-        "moves": [
-          "Kasib Berry",
-          "The most popular items for Sinistcha are Sitrus Berry"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 6,
@@ -233,13 +215,10 @@
       ],
       "top_item_observed": "Life Orb",
       "rejected_source_values": {
-        "moves": [
-          "Mystic Water",
-          "The most popular items for Basculegion are Choice Scarf"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 7,
@@ -264,16 +243,10 @@
       "top_moves_observed": [],
       "top_item_observed": "",
       "rejected_source_values": {
-        "moves": [
-          "Focus Sash",
-          "Passho Berry",
-          "The most popular items for Aerodactyl are Aerodactylite"
-        ],
-        "items": [
-          ""
-        ]
+        "moves": [],
+        "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 8,
@@ -302,14 +275,10 @@
       ],
       "top_item_observed": "Charizardite Y",
       "rejected_source_values": {
-        "moves": [
-          "Charizardite X",
-          "Focus Sash",
-          "The most popular items for Charizard are Charizardite Y"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 9,
@@ -336,7 +305,7 @@
         ],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 10,
@@ -365,14 +334,10 @@
       ],
       "top_item_observed": "Focus Sash",
       "rejected_source_values": {
-        "moves": [
-          "Fairy Feather",
-          "Mental Herb",
-          "The most popular items for Whimsicott are Focus Sash"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 11,
@@ -401,14 +366,10 @@
       ],
       "top_item_observed": "Focus Sash",
       "rejected_source_values": {
-        "moves": [
-          "Damp Rock",
-          "Sitrus Berry",
-          "The most popular items for Pelipper are Focus Sash"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 12,
@@ -432,7 +393,6 @@
         "Light of Ruin",
         "Calm Mind",
         "Draining Kiss",
-        "Psychic",
         "Grass Knot",
         "Giga Drain",
         "Energy Ball"
@@ -440,7 +400,9 @@
       "top_moves_observed": [],
       "top_item_observed": "",
       "rejected_source_values": {
-        "moves": [],
+        "moves": [
+          "Psychic"
+        ],
         "items": []
       },
       "set_prior_scope": "current-meta-summary plus prior legal set details"
@@ -469,7 +431,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 14,
@@ -499,16 +461,13 @@
       "top_item_observed": "Throat Spray",
       "rejected_source_values": {
         "moves": [
-          "Colbur Berry",
-          "Mental Herb",
-          "Psychic",
-          "The most popular items for Farigiraf are Sitrus Berry"
+          "Psychic"
         ],
         "items": [
           "Throat Spray"
         ]
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 15,
@@ -534,7 +493,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 16,
@@ -564,16 +523,13 @@
       "top_item_observed": "Power Herb",
       "rejected_source_values": {
         "moves": [
-          "Body Press",
-          "Choice Scarf",
-          "The most popular items for Archaludon are Leftovers",
-          "White Herb"
+          "Body Press"
         ],
         "items": [
           "Power Herb"
         ]
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 17,
@@ -599,7 +555,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 18,
@@ -625,7 +581,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 19,
@@ -651,7 +607,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 20,
@@ -677,7 +633,7 @@
           "Throat Spray"
         ]
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 21,
@@ -703,7 +659,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 22,
@@ -729,7 +685,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 23,
@@ -755,7 +711,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 24,
@@ -781,7 +737,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 25,
@@ -808,7 +764,7 @@
         ],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 26,
@@ -835,7 +791,7 @@
         ],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 27,
@@ -861,7 +817,7 @@
           "Eject Pack"
         ]
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 28,
@@ -887,7 +843,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 29,
@@ -913,7 +869,7 @@
           "Clear Amulet"
         ]
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 30,
@@ -939,7 +895,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 31,
@@ -965,7 +921,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 32,
@@ -991,7 +947,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 33,
@@ -1017,7 +973,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 34,
@@ -1044,7 +1000,7 @@
         ],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 35,
@@ -1070,7 +1026,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 36,
@@ -1096,7 +1052,7 @@
         "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 37,
@@ -1126,14 +1082,10 @@
       ],
       "top_item_observed": "Sitrus Berry",
       "rejected_source_values": {
-        "moves": [
-          "Focus Sash",
-          "The most popular items for Maushold are Chople Berry",
-          "Wide Lens"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 38,
@@ -1160,7 +1112,7 @@
         ],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 39,
@@ -1187,7 +1139,7 @@
         ],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 40,
@@ -1213,7 +1165,7 @@
           "Throat Spray"
         ]
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 41,
@@ -1240,7 +1192,7 @@
         ],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 42,
@@ -1266,7 +1218,7 @@
           "Power Herb"
         ]
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 43,
@@ -1292,7 +1244,7 @@
           "Rocky Helmet"
         ]
       },
-      "set_prior_scope": "current-meta-summary only"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 44,
@@ -1323,14 +1275,10 @@
       ],
       "top_item_observed": "Raichunite Y",
       "rejected_source_values": {
-        "moves": [
-          "Focus Sash",
-          "Raichunite X",
-          "The most popular items for Raichu are Raichunite Y"
-        ],
+        "moves": [],
         "items": []
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     },
     {
       "rank": 45,
@@ -1361,16 +1309,12 @@
       ],
       "top_item_observed": "Throat Spray",
       "rejected_source_values": {
-        "moves": [
-          "Life Orb",
-          "Sitrus Berry",
-          "The most popular items for Sylveon are Fairy Feather"
-        ],
+        "moves": [],
         "items": [
           "Throat Spray"
         ]
       },
-      "set_prior_scope": "current-meta-summary plus rolling Pikalytics set details"
+      "set_prior_scope": "current-meta-summary plus prior legal set details"
     }
   ]
 }
